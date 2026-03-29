@@ -1,0 +1,279 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ChecklistType {
+  ENTRADA
+  SAIDA
+}
+
+enum DueRuleType {
+  OFFSET_DAYS
+  DAY_OF_NEXT_MONTH
+}
+
+enum ItemStatus {
+  PENDENTE
+  EM_ANDAMENTO
+  CONCLUIDO
+  NA
+}
+
+enum RoleName {
+  ADMIN
+  GESTOR_EMPRESA
+  OPERADOR
+  LEITURA
+}
+
+model Company {
+  id            String   @id @default(cuid())
+  cnpj          String   @unique
+  razaoSocial   String?
+  nomeFantasia  String?
+  dataCadastro  DateTime @default(now())
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // relations
+  checklistRuns        ChecklistRun[]
+  responsibles         CompanySectorResponsible[]
+  responsibleHistory   CompanySectorResponsibleHistory[]
+  partners             CompanyPartner[]
+
+  @@map("Company")
+}
+
+model CompanyPartner {
+  id             String   @id @default(cuid())
+  companyId      String
+
+  nomeCompleto    String?
+  whatsapp        String?
+  email           String?
+  telefoneEmpresa String?
+  dataNascimento  DateTime?
+  outros          String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("CompanyPartner")
+}
+
+model Sector {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // relations
+  users                User[]
+  templateItems        ChecklistTemplateItem[]        @relation("TemplateItemSector")
+  responsibles         CompanySectorResponsible[]
+  responsibleHistory   CompanySectorResponsibleHistory[]
+
+  @@map("Sector")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  active       Boolean  @default(true)
+
+  sectorId String?
+  sector   Sector? @relation(fields: [sectorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // relations
+  roles                 UserRole[]
+  responsibles           CompanySectorResponsible[]
+  responsibleHistory     CompanySectorResponsibleHistory[]
+  auditLogs              AuditLog[] @relation("AuditActor")
+
+  @@map("User")
+}
+
+model Role {
+  id   String   @id @default(cuid())
+  name RoleName @unique
+
+  users UserRole[]
+
+  @@map("Role")
+}
+
+model UserRole {
+  id     String @id @default(cuid())
+  userId String
+  roleId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("UserRole")
+}
+
+model ChecklistTemplate {
+  id        String        @id @default(cuid())
+  type      ChecklistType
+  name      String
+  version   Int           @default(1)
+  active    Boolean       @default(true)
+
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  sections ChecklistTemplateSection[]
+
+  @@map("ChecklistTemplate")
+}
+
+model ChecklistTemplateSection {
+  id         String   @id @default(cuid())
+  templateId String
+  name       String
+  order      Int      @default(0)
+
+  template ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  items    ChecklistTemplateItem[]
+
+  @@map("ChecklistTemplateSection")
+}
+
+model ChecklistTemplateItem {
+  id                    String       @id @default(cuid())
+  sectionId             String
+  code                  String?
+  description           String
+  order                 Int          @default(0)
+  sectorId              String?
+  isRequired            Boolean      @default(false)
+  offsetDaysFromAnchor  Int?
+  dueRuleType           DueRuleType  @default(OFFSET_DAYS)
+  dueRuleParam          Int?
+
+  section ChecklistTemplateSection @relation(fields: [sectionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  // IMPORTANT: explicit relation name so Sector has the opposite list.
+  sector  Sector? @relation("TemplateItemSector", fields: [sectorId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@map("ChecklistTemplateItem")
+}
+
+model ChecklistRun {
+  id         String        @id @default(cuid())
+  companyId  String
+  templateId String?
+  type       ChecklistType
+  createdBy  String
+  anchorAt   DateTime?
+  createdAt  DateTime      @default(now())
+
+  // snapshots (history must be immutable)
+  snapshotTemplateName    String?
+  snapshotTemplateVersion Int?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  items ChecklistItemRun[]
+
+  @@map("ChecklistRun")
+}
+
+model ChecklistItemRun {
+  id               String     @id @default(cuid())
+  runId            String
+  templateItemId   String?    // no FK on purpose
+
+  status           ItemStatus @default(PENDENTE)
+  observation      String?
+  dueDate          DateTime?
+  doneAt           DateTime?
+  doneBy           String?
+  overdueNotifiedAt DateTime?
+
+  // snapshots
+  snapshotSectionName          String?
+  snapshotItemCode             String?
+  snapshotItemDescription      String?
+  snapshotItemOrder            Int?
+  snapshotIsRequired           Boolean?
+  snapshotSectorId             String?
+  snapshotOffsetDaysFromAnchor Int?
+  snapshotDueRuleType          DueRuleType?
+  snapshotDueRuleParam         Int?
+
+  run ChecklistRun @relation(fields: [runId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([runId])
+  @@map("ChecklistItemRun")
+}
+
+model CompanySectorResponsible {
+  id        String @id @default(cuid())
+  companyId String
+  sectorId  String
+  userId    String
+
+  assignedAt DateTime @default(now())
+  assignedBy String
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sector  Sector  @relation(fields: [sectorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([companyId, sectorId])
+  @@map("CompanySectorResponsible")
+}
+
+model CompanySectorResponsibleHistory {
+  id        String @id @default(cuid())
+  companyId String
+  sectorId  String
+  userId    String
+
+  startAt   DateTime @default(now())
+  endAt     DateTime?
+  changedBy String
+  reason    String?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sector  Sector  @relation(fields: [sectorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@map("CompanySectorResponsibleHistory")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String
+  action      String
+  entity      String
+  entityId    String?
+  beforeJson  Json?
+  afterJson   Json?
+
+  createdAt DateTime @default(now())
+  ip        String?
+  userAgent String?
+
+  actor User @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@map("AuditLog")
+}
