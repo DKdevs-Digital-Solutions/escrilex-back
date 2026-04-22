@@ -1,11 +1,14 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, RoleName } from "@prisma/client";
 import bcrypt from "bcrypt";
 
-const { PrismaClient, RoleName } = pkg;
 const prisma = new PrismaClient();
 
 async function ensureRole(name) {
-  await prisma.role.upsert({ where: { name }, update: {}, create: { name } });
+  await prisma.role.upsert({
+    where: { name },
+    update: {},
+    create: { name },
+  });
 }
 
 async function main() {
@@ -27,11 +30,14 @@ async function main() {
 
   const role = await prisma.role.findUnique({ where: { name: RoleName.ADMIN } });
   if (role) {
-    await prisma.userRole.upsert({
-      where: { userId_roleId: { userId: admin.id, roleId: role.id } },
-      update: {},
-      create: { userId: admin.id, roleId: role.id },
+    const existingLink = await prisma.userRole.findFirst({
+      where: { userId: admin.id, roleId: role.id },
     });
+    if (!existingLink) {
+      await prisma.userRole.create({
+        data: { userId: admin.id, roleId: role.id },
+      });
+    }
   }
 
   for (const name of ["Comercial", "Societário", "Fiscal", "Contábil", "DP", "Compliance"]) {
@@ -42,5 +48,10 @@ async function main() {
 }
 
 main()
-  .catch((e) => { console.error(e); process.exit(1); })
-  .finally(async () => { await prisma.$disconnect(); });
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

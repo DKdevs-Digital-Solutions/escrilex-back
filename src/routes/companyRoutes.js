@@ -5,30 +5,80 @@ import { audit } from "../audit.js";
 
 export const companyRoutes = Router();
 
+function parseBooleanParam(value) {
+  if (value === undefined) return undefined;
+  const normalized = String(value).trim().toLowerCase();
+  if (["true", "1", "yes", "sim"].includes(normalized)) return true;
+  if (["false", "0", "no", "nao", "não"].includes(normalized)) return false;
+  return undefined;
+}
+
+const companyBaseSchema = z.object({
+  cnpj: z.string().min(8),
+  razaoSocial: z.string().optional().nullable(),
+  nomeFantasia: z.string().optional().nullable(),
+  dataCadastro: z.coerce.date().optional(),
+});
+
 companyRoutes.get("/", async (req, res) => {
-  const search = (req.query.search || "").trim();
+  const search = String(req.query.search || "").trim();
+  const active = parseBooleanParam(req.query.active);
+
   const companies = await prisma.company.findMany({
-    where: search ? { OR: [
-      { cnpj: { contains: search } },
-      { razaoSocial: { contains: search, mode: "insensitive" } },
-      { nomeFantasia: { contains: search, mode: "insensitive" } },
-    ] } : undefined,
+    where: {
+      ...(active === undefined ? {} : { active }),
+      ...(search
+        ? {
+            OR: [
+              { cnpj: { contains: search } },
+              { razaoSocial: { contains: search, mode: "insensitive" } },
+              { nomeFantasia: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
     orderBy: { createdAt: "desc" },
   });
+
   res.json(companies);
 });
 
 companyRoutes.post("/", async (req, res) => {
-  const body = z.object({
-    cnpj: z.string().min(8),
-    razaoSocial: z.string().optional(),
-    nomeFantasia: z.string().optional(),
-  }).safeParse(req.body);
+  const body = companyBaseSchema.safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
-  const company = await prisma.company.create({ data: body.data });
+  const company = await prisma.company.create({
+    data: {
+      cnpj: body.data.cnpj,
+      razaoSocial: body.data.razaoSocial ?? null,
+      nomeFantasia: body.data.nomeFantasia ?? null,
+      ...(body.data.dataCadastro ? { dataCadastro: body.data.dataCadastro } : {}),
+    },
+  });
+
   await audit(req, "COMPANY_CREATE", "Company", company.id, undefined, company);
   res.status(201).json(company);
+});
+
+companyRoutes.get("/responsibles/by-cnpj", async (req, res) => {
+  const cnpj = String(req.query.cnpj || "").trim();
+  if (!cnpj) return res.status(400).json({ error: "cnpj is required" });
+
+  const company = await prisma.company.findUnique({
+    where: { cnpj },
+    include: { responsibles: { include: { sector: true, user: true } } },
+  });
+  if (!company) return res.status(404).json({ error: "Company not found" });
+
+  res.json({
+    cnpj: company.cnpj,
+    companyId: company.id,
+    razaoSocial: company.razaoSocial,
+    responsibles: company.responsibles.map((r) => ({
+      sector: { id: r.sector.id, name: r.sector.name },
+      user: { id: r.user.id, name: r.user.name, email: r.user.email },
+    })),
+  });
 });
 
 companyRoutes.get("/:id", async (req, res) => {
@@ -40,20 +90,70 @@ companyRoutes.get("/:id", async (req, res) => {
   res.json(company);
 });
 
+companyRoutes.put("/:id", async (req, res) => {
+  const body = companyBaseSchema.partial().safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: body.error.flatten() });
+
+  const before = await prisma.company.findUnique({ where: { id: req.params.id } });
+  if (!before) return res.status(404).json({ error: "Not found" });
+
+  const updated = await prisma.company.update({
+    where: { id: req.params.id },
+    data: {
+      ...(body.data.cnpj !== undefined ? { cnpj: body.data.cnpj } : {}),
+      ...(body.data.razaoSocial !== undefined ? { razaoSocial: body.data.razaoSocial ?? null } : {}),
+      ...(body.data.nomeFantasia !== undefined ? { nomeFantasia: body.data.nomeFantasia ?? null } : {}),
+      ...(body.data.dataCadastro !== undefined ? { dataCadastro: body.data.dataCadastro } : {}),
+    },
+  });
+
+  await audit(req, "COMPANY_UPDATE", "Company", updated.id, before, updated);
+  res.json(updated);
+});
+
+companyRoutes.patch("/:id/status", async (req, res) => {
+  const body = z.object({ active: z.boolean() }).safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: body.error.flatten() });
+
+  const before = await prisma.company.findUnique({ where: { id: req.params.id } });
+  if (!before) return res.status(404).json({ error: "Not found" });
+
+  const updated = await prisma.company.update({
+    where: { id: req.params.id },
+    data: {
+      active: body.data.active,
+      inactivatedAt: body.data.active ? null : new Date(),
+    },
+  });
+
+  await audit(req, body.data.active ? "COMPANY_ACTIVATE" : "COMPANY_INACTIVATE", "Company", updated.id, before, updated);
+  res.json(updated);
+});
+
+companyRoutes.delete("/:id", async (req, res) => {
+  const before = await prisma.company.findUnique({ where: { id: req.params.id } });
+  if (!before) return res.status(404).json({ error: "Not found" });
+
+  const updated = await prisma.company.update({
+    where: { id: req.params.id },
+    data: { active: false, inactivatedAt: new Date() },
+  });
+
+  await audit(req, "COMPANY_INACTIVATE", "Company", updated.id, before, updated);
+  res.json({ ok: true });
+});
+
 companyRoutes.get("/:id/checklists", async (req, res) => {
-  const type = (req.query.type || "").toString().trim();
+  const type = String(req.query.type || "").trim();
   const companyId = req.params.id;
   if (type && !["ENTRADA", "SAIDA"].includes(type)) return res.status(400).json({ error: "invalid type" });
-  const where = {
-    companyId,
-    ...(type ? { type } : {}),
-  };
 
   const runs = await prisma.checklistRun.findMany({
-    where,
+    where: {
+      companyId,
+      ...(type ? { type } : {}),
+    },
     orderBy: { createdAt: "desc" },
-    // IMPORTANT: run history must be immutable.
-    // So we do NOT join template/templateItem here (they can change over time).
     select: {
       id: true,
       type: true,
@@ -74,27 +174,29 @@ companyRoutes.get("/:id/checklists", async (req, res) => {
     },
   });
 
-  res.json(runs.map((r) => ({
-    id: r.id,
-    type: r.type,
-    // Keep template info for internal/debug purposes, but UI should not rely on it.
-    template: { id: r.templateId, name: r.snapshotTemplateName ?? null, version: r.snapshotTemplateVersion ?? null },
-    firstDoneActionCode: r.items?.[0]?.snapshotItemCode ?? null,
-    firstDoneActionText: r.items?.[0]?.snapshotItemDescription ?? null,
-    createdAt: r.createdAt,
-    anchorAt: r.anchorAt,
-  })));
+  res.json(
+    runs.map((r) => ({
+      id: r.id,
+      type: r.type,
+      template: { id: r.templateId, name: r.snapshotTemplateName ?? null, version: r.snapshotTemplateVersion ?? null },
+      firstDoneActionCode: r.items?.[0]?.snapshotItemCode ?? null,
+      firstDoneActionText: r.items?.[0]?.snapshotItemDescription ?? null,
+      createdAt: r.createdAt,
+      anchorAt: r.anchorAt,
+    })),
+  );
 });
 
 companyRoutes.put("/:id/responsibles", async (req, res) => {
-  const body = z.object({
-    responsibles: z.array(z.object({ sectorId: z.string(), userId: z.string() })),
-    reason: z.string().optional(),
-  }).safeParse(req.body);
+  const body = z
+    .object({
+      responsibles: z.array(z.object({ sectorId: z.string(), userId: z.string() })),
+      reason: z.string().optional(),
+    })
+    .safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
   const actorId = req.user.id;
-
   const company = await prisma.company.findUnique({ where: { id: req.params.id } });
   if (!company) return res.status(404).json({ error: "Company not found" });
 
@@ -138,34 +240,9 @@ companyRoutes.put("/:id/responsibles", async (req, res) => {
   res.json({ ok: true });
 });
 
-companyRoutes.get("/responsibles/by-cnpj", async (req, res) => {
-  const cnpj = (req.query.cnpj || "").trim();
-  if (!cnpj) return res.status(400).json({ error: "cnpj is required" });
-
-  const company = await prisma.company.findUnique({
-    where: { cnpj },
-    include: { responsibles: { include: { sector: true, user: true } } },
-  });
-  if (!company) return res.status(404).json({ error: "Company not found" });
-
-  res.json({
-    cnpj: company.cnpj,
-    companyId: company.id,
-    razaoSocial: company.razaoSocial,
-    responsibles: company.responsibles.map((r) => ({
-      sector: { id: r.sector.id, name: r.sector.name },
-      user: { id: r.user.id, name: r.user.name, email: r.user.email },
-    })),
-  });
-});
-
-// ---- SOCIOS (CompanyPartner) ----
-
 companyRoutes.get("/:id/partners", async (req, res) => {
-  const companyId = req.params.id;
-
   const partners = await prisma.companyPartner.findMany({
-    where: { companyId },
+    where: { companyId: req.params.id },
     orderBy: { createdAt: "desc" },
   });
 
@@ -173,21 +250,21 @@ companyRoutes.get("/:id/partners", async (req, res) => {
 });
 
 companyRoutes.post("/:id/partners", async (req, res) => {
-  const companyId = req.params.id;
-
-  const body = z.object({
-    nomeCompleto: z.string().min(1),
-    whatsapp: z.string().optional().nullable(),
-    email: z.string().email().optional().nullable(),
-    telefoneEmpresa: z.string().optional().nullable(),
-    dataNascimento: z.coerce.date().optional().nullable(),
-    outros: z.string().optional().nullable(),
-  }).safeParse(req.body);
+  const body = z
+    .object({
+      nomeCompleto: z.string().min(1),
+      whatsapp: z.string().optional().nullable(),
+      email: z.string().email().optional().nullable(),
+      telefoneEmpresa: z.string().optional().nullable(),
+      dataNascimento: z.coerce.date().optional().nullable(),
+      outros: z.string().optional().nullable(),
+    })
+    .safeParse(req.body);
 
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
   const partner = await prisma.companyPartner.create({
-    data: { companyId, ...body.data },
+    data: { companyId: req.params.id, ...body.data },
   });
 
   await audit(req, "COMPANY_PARTNER_CREATE", "CompanyPartner", partner.id, undefined, partner);
@@ -195,27 +272,26 @@ companyRoutes.post("/:id/partners", async (req, res) => {
 });
 
 companyRoutes.put("/:id/partners/:partnerId", async (req, res) => {
-  const companyId = req.params.id;
-  const partnerId = req.params.partnerId;
-
-  const body = z.object({
-    nomeCompleto: z.string().min(1).optional(),
-    whatsapp: z.string().optional().nullable(),
-    email: z.string().email().optional().nullable(),
-    telefoneEmpresa: z.string().optional().nullable(),
-    dataNascimento: z.coerce.date().optional().nullable(),
-    outros: z.string().optional().nullable(),
-  }).safeParse(req.body);
+  const body = z
+    .object({
+      nomeCompleto: z.string().min(1).optional(),
+      whatsapp: z.string().optional().nullable(),
+      email: z.string().email().optional().nullable(),
+      telefoneEmpresa: z.string().optional().nullable(),
+      dataNascimento: z.coerce.date().optional().nullable(),
+      outros: z.string().optional().nullable(),
+    })
+    .safeParse(req.body);
 
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
   const existing = await prisma.companyPartner.findFirst({
-    where: { id: partnerId, companyId },
+    where: { id: req.params.partnerId, companyId: req.params.id },
   });
   if (!existing) return res.status(404).json({ error: "Partner not found" });
 
   const updated = await prisma.companyPartner.update({
-    where: { id: partnerId },
+    where: { id: req.params.partnerId },
     data: body.data,
   });
 
@@ -224,15 +300,12 @@ companyRoutes.put("/:id/partners/:partnerId", async (req, res) => {
 });
 
 companyRoutes.delete("/:id/partners/:partnerId", async (req, res) => {
-  const companyId = req.params.id;
-  const partnerId = req.params.partnerId;
-
   const existing = await prisma.companyPartner.findFirst({
-    where: { id: partnerId, companyId },
+    where: { id: req.params.partnerId, companyId: req.params.id },
   });
   if (!existing) return res.status(404).json({ error: "Partner not found" });
 
-  await prisma.companyPartner.delete({ where: { id: partnerId } });
+  await prisma.companyPartner.delete({ where: { id: req.params.partnerId } });
   await audit(req, "COMPANY_PARTNER_DELETE", "CompanyPartner", existing.id, existing, undefined);
 
   res.json({ ok: true });
