@@ -491,7 +491,7 @@ export function buildOpenApiSpec() {
       version: "1.0.0",
       description: "Documentação das chamadas disponíveis do backend, incluindo dashboard, empresas, checklists, templates, integração e configuração única de e-mail.",
     },
-    servers: [{ url: "http://localhost:3000" }],
+    servers: [{ url: "https://escrilex-back.onrender.com" }],
     components: {
       securitySchemes: {
         bearerAuth: {
