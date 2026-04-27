@@ -15,8 +15,21 @@ import { scanAndNotifyOverdue } from "./overdueScanner.js";
 import { registerSwagger } from "./swagger.js";
 
 const app = express();
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || env.WEB_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(null, false);
+  },
+  credentials: true,
+};
+
 app.use(express.json());
-app.use(cors({ origin: env.WEB_ORIGIN, credentials: true }));
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 registerSwagger(app);
 
