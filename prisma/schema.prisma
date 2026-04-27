@@ -37,6 +37,27 @@ model Company {
   razaoSocial   String?
   nomeFantasia  String?
   dataCadastro  DateTime @default(now())
+
+  cod                   String?
+  filial                String?
+  grupo                 String?
+  tributacao            String?
+  ieAtual               String?
+  dataTributacao        DateTime?
+  motivoEntrada         String?
+  situacao              String?
+  dataSituacao          DateTime?
+  ramo                  String?
+  consultoria           String?
+  banco                 String?
+  perfil                String?
+  licitacao             String?
+  responsavelComercial  String?
+  dataEntrada           DateTime?
+  dataInicioCobranca    DateTime?
+  dataFimCobranca       DateTime?
+  motivoSaidaResumo     String?
+  qtdeInicialFolha      Int?
   active        Boolean  @default(true)
   inactivatedAt DateTime?
 
