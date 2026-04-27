@@ -13,12 +13,89 @@ function parseBooleanParam(value) {
   return undefined;
 }
 
+const emptyToNull = (value) => (value === "" || value === null ? null : value);
+
+const nullableString = z.preprocess(emptyToNull, z.string().nullable().optional());
+
+const nullableDate = z.preprocess(emptyToNull, z.coerce.date().nullable().optional());
+
+const nullableBoolean = z.preprocess((value) => {
+  if (value === "" || value === null || value === undefined) return value === undefined ? undefined : null;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "sim"].includes(normalized)) return true;
+    if (["false", "0", "no", "nao", "não"].includes(normalized)) return false;
+  }
+  return value;
+}, z.boolean().nullable().optional());
+
+const nullableInt = z.preprocess((value) => {
+  if (value === "" || value === null || value === undefined) return value === undefined ? undefined : null;
+  return value;
+}, z.coerce.number().int().nullable().optional());
+
 const companyBaseSchema = z.object({
   cnpj: z.string().min(8),
-  razaoSocial: z.string().optional().nullable(),
-  nomeFantasia: z.string().optional().nullable(),
-  dataCadastro: z.coerce.date().optional(),
+  razaoSocial: nullableString,
+  nomeFantasia: nullableString,
+  dataCadastro: nullableDate,
+  cod: nullableString,
+  filial: nullableString,
+  grupo: nullableString,
+  tributacao: nullableString,
+  ieAtual: nullableString,
+  dataTributacao: nullableDate,
+  motivoEntrada: nullableString,
+  situacao: nullableString,
+  dataSituacao: nullableDate,
+  ramo: nullableString,
+  consultoria: nullableString,
+  banco: nullableString,
+  perfil: nullableString,
+  licitacao: nullableString,
+  responsavelComercial: nullableString,
+  dataEntrada: nullableDate,
+  dataInicioCobranca: nullableDate,
+  dataFimCobranca: nullableDate,
+  motivoSaidaResumo: nullableString,
+  qtdeInicialFolha: nullableInt,
 });
+
+function pickDefined(data, fields) {
+  return fields.reduce((acc, field) => {
+    if (data[field] !== undefined) acc[field] = data[field];
+    return acc;
+  }, {});
+}
+
+const companyWritableFields = [
+  "cnpj",
+  "razaoSocial",
+  "nomeFantasia",
+  "dataCadastro",
+  "cod",
+  "filial",
+  "grupo",
+  "tributacao",
+  "ieAtual",
+  "dataTributacao",
+  "motivoEntrada",
+  "situacao",
+  "dataSituacao",
+  "ramo",
+  "consultoria",
+  "banco",
+  "perfil",
+  "licitacao",
+  "responsavelComercial",
+  "dataEntrada",
+  "dataInicioCobranca",
+  "dataFimCobranca",
+  "motivoSaidaResumo",
+  "qtdeInicialFolha",
+];
+
+const companyInclude = { responsibles: { include: { sector: true, user: true } } };
 
 companyRoutes.get("/", async (req, res) => {
   const search = String(req.query.search || "").trim();
@@ -47,13 +124,12 @@ companyRoutes.post("/", async (req, res) => {
   const body = companyBaseSchema.safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
+  const createData = pickDefined(body.data, companyWritableFields);
+  if (createData.dataCadastro === null) delete createData.dataCadastro;
+
   const company = await prisma.company.create({
-    data: {
-      cnpj: body.data.cnpj,
-      razaoSocial: body.data.razaoSocial ?? null,
-      nomeFantasia: body.data.nomeFantasia ?? null,
-      ...(body.data.dataCadastro ? { dataCadastro: body.data.dataCadastro } : {}),
-    },
+    data: createData,
+    include: companyInclude,
   });
 
   await audit(req, "COMPANY_CREATE", "Company", company.id, undefined, company);
@@ -84,7 +160,7 @@ companyRoutes.get("/responsibles/by-cnpj", async (req, res) => {
 companyRoutes.get("/:id", async (req, res) => {
   const company = await prisma.company.findUnique({
     where: { id: req.params.id },
-    include: { responsibles: { include: { sector: true, user: true } } },
+    include: companyInclude,
   });
   if (!company) return res.status(404).json({ error: "Not found" });
   res.json(company);
@@ -97,14 +173,13 @@ companyRoutes.put("/:id", async (req, res) => {
   const before = await prisma.company.findUnique({ where: { id: req.params.id } });
   if (!before) return res.status(404).json({ error: "Not found" });
 
+  const updateData = pickDefined(body.data, companyWritableFields);
+  if (updateData.dataCadastro === null) delete updateData.dataCadastro;
+
   const updated = await prisma.company.update({
     where: { id: req.params.id },
-    data: {
-      ...(body.data.cnpj !== undefined ? { cnpj: body.data.cnpj } : {}),
-      ...(body.data.razaoSocial !== undefined ? { razaoSocial: body.data.razaoSocial ?? null } : {}),
-      ...(body.data.nomeFantasia !== undefined ? { nomeFantasia: body.data.nomeFantasia ?? null } : {}),
-      ...(body.data.dataCadastro !== undefined ? { dataCadastro: body.data.dataCadastro } : {}),
-    },
+    data: updateData,
+    include: companyInclude,
   });
 
   await audit(req, "COMPANY_UPDATE", "Company", updated.id, before, updated);
