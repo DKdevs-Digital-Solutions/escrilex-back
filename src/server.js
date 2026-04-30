@@ -17,14 +17,9 @@ import { registerSwagger } from "./swagger.js";
 const app = express();
 
 const corsOptions = {
-  origin(origin, callback) {
-    if (!origin || env.WEB_ORIGINS.includes(origin)) {
-      return callback(null, true);
-    }
-
-    return callback(null, false);
-  },
-  credentials: true,
+  origin: "*",
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
 };
 
 app.use(express.json());
