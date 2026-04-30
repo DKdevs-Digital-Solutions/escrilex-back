@@ -13,29 +13,36 @@ function parseBooleanParam(value) {
   return undefined;
 }
 
+function normalizeCnpj(value) {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
 const emptyToNull = (value) => (value === "" || value === null ? null : value);
 
 const nullableString = z.preprocess(emptyToNull, z.string().nullable().optional());
 
 const nullableDate = z.preprocess(emptyToNull, z.coerce.date().nullable().optional());
 
-const nullableBoolean = z.preprocess((value) => {
-  if (value === "" || value === null || value === undefined) return value === undefined ? undefined : null;
-  if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
-    if (["true", "1", "yes", "sim"].includes(normalized)) return true;
-    if (["false", "0", "no", "nao", "não"].includes(normalized)) return false;
-  }
-  return value;
-}, z.boolean().nullable().optional());
+const optionalBoolean = z.preprocess((value) => {
+  if (value === "" || value === null || value === undefined) return undefined;
+  const parsed = parseBooleanParam(value);
+  return parsed === undefined ? value : parsed;
+}, z.boolean().optional());
+
+const requiredBoolean = z.preprocess((value) => {
+  const parsed = parseBooleanParam(value);
+  return parsed === undefined ? value : parsed;
+}, z.boolean());
 
 const nullableInt = z.preprocess((value) => {
   if (value === "" || value === null || value === undefined) return value === undefined ? undefined : null;
   return value;
 }, z.coerce.number().int().nullable().optional());
 
+const cnpjString = z.preprocess((value) => normalizeCnpj(value), z.string().min(8));
+
 const companyBaseSchema = z.object({
-  cnpj: z.string().min(8),
+  cnpj: cnpjString,
   razaoSocial: nullableString,
   nomeFantasia: nullableString,
   dataCadastro: nullableDate,
@@ -59,6 +66,10 @@ const companyBaseSchema = z.object({
   dataFimCobranca: nullableDate,
   motivoSaidaResumo: nullableString,
   qtdeInicialFolha: nullableInt,
+  qtdeFolha: nullableInt,
+  qtde_folha: nullableInt,
+  "QTDE Folha": nullableInt,
+  active: optionalBoolean,
 });
 
 function pickDefined(data, fields) {
@@ -66,6 +77,29 @@ function pickDefined(data, fields) {
     if (data[field] !== undefined) acc[field] = data[field];
     return acc;
   }, {});
+}
+
+function buildCompanyWriteData(data) {
+  const normalized = { ...data };
+
+  // Compatibilidade com nomes que o front/formulário pode enviar para o campo "QTDE Folha".
+  if (normalized.qtdeInicialFolha === undefined) {
+    for (const alias of ["qtdeFolha", "qtde_folha", "QTDE Folha"]) {
+      if (normalized[alias] !== undefined) {
+        normalized.qtdeInicialFolha = normalized[alias];
+        break;
+      }
+    }
+  }
+
+  const writeData = pickDefined(normalized, companyWritableFields);
+  if (writeData.dataCadastro === null) delete writeData.dataCadastro;
+
+  if (writeData.active !== undefined) {
+    writeData.inactivatedAt = writeData.active ? null : new Date();
+  }
+
+  return writeData;
 }
 
 const companyWritableFields = [
@@ -93,12 +127,14 @@ const companyWritableFields = [
   "dataFimCobranca",
   "motivoSaidaResumo",
   "qtdeInicialFolha",
+  "active",
 ];
 
 const companyInclude = { responsibles: { include: { sector: true, user: true } } };
 
 companyRoutes.get("/", async (req, res) => {
   const search = String(req.query.search || "").trim();
+  const normalizedSearchCnpj = normalizeCnpj(search);
   const active = parseBooleanParam(req.query.active);
 
   const companies = await prisma.company.findMany({
@@ -108,6 +144,7 @@ companyRoutes.get("/", async (req, res) => {
         ? {
             OR: [
               { cnpj: { contains: search } },
+              ...(normalizedSearchCnpj && normalizedSearchCnpj !== search ? [{ cnpj: { contains: normalizedSearchCnpj } }] : []),
               { razaoSocial: { contains: search, mode: "insensitive" } },
               { nomeFantasia: { contains: search, mode: "insensitive" } },
             ],
@@ -124,8 +161,7 @@ companyRoutes.post("/", async (req, res) => {
   const body = companyBaseSchema.safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
-  const createData = pickDefined(body.data, companyWritableFields);
-  if (createData.dataCadastro === null) delete createData.dataCadastro;
+  const createData = buildCompanyWriteData(body.data);
 
   const company = await prisma.company.create({
     data: createData,
@@ -137,11 +173,18 @@ companyRoutes.post("/", async (req, res) => {
 });
 
 companyRoutes.get("/responsibles/by-cnpj", async (req, res) => {
-  const cnpj = String(req.query.cnpj || "").trim();
+  const rawCnpj = String(req.query.cnpj || "").trim();
+  const cnpj = normalizeCnpj(rawCnpj);
   if (!cnpj) return res.status(400).json({ error: "cnpj is required" });
 
-  const company = await prisma.company.findUnique({
-    where: { cnpj },
+  const company = await prisma.company.findFirst({
+    where: {
+      OR: [
+        { cnpj: rawCnpj },
+        { cnpj },
+        ...(cnpj.length >= 8 ? [{ cnpj: { contains: cnpj } }] : []),
+      ],
+    },
     include: { responsibles: { include: { sector: true, user: true } } },
   });
   if (!company) return res.status(404).json({ error: "Company not found" });
@@ -173,8 +216,7 @@ companyRoutes.put("/:id", async (req, res) => {
   const before = await prisma.company.findUnique({ where: { id: req.params.id } });
   if (!before) return res.status(404).json({ error: "Not found" });
 
-  const updateData = pickDefined(body.data, companyWritableFields);
-  if (updateData.dataCadastro === null) delete updateData.dataCadastro;
+  const updateData = buildCompanyWriteData(body.data);
 
   const updated = await prisma.company.update({
     where: { id: req.params.id },
@@ -187,7 +229,7 @@ companyRoutes.put("/:id", async (req, res) => {
 });
 
 companyRoutes.patch("/:id/status", async (req, res) => {
-  const body = z.object({ active: z.boolean() }).safeParse(req.body);
+  const body = z.object({ active: requiredBoolean }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
   const before = await prisma.company.findUnique({ where: { id: req.params.id } });
@@ -215,7 +257,7 @@ companyRoutes.delete("/:id", async (req, res) => {
   });
 
   await audit(req, "COMPANY_INACTIVATE", "Company", updated.id, before, updated);
-  res.json({ ok: true });
+  res.json(updated);
 });
 
 companyRoutes.get("/:id/checklists", async (req, res) => {
