@@ -17,14 +17,44 @@ import { registerSwagger } from "./swagger.js";
 const app = express();
 
 const corsOptions = {
-  origin: "*",
+  origin: true,
+  credentials: false,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "Accept",
+    "Origin",
+    "X-Requested-With",
+    "X-Api-Key",
+  ],
+  exposedHeaders: ["Content-Disposition"],
+  optionsSuccessStatus: 204,
 };
 
-app.use(express.json());
+// CORS precisa rodar antes de JSON, autenticação, Swagger e todas as rotas.
+// O Render/Browser bloqueia tudo quando o preflight OPTIONS cai em auth ou erro sem headers.
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  res.header("Access-Control-Allow-Origin", origin || "*");
+  res.header("Vary", "Origin");
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    req.headers["access-control-request-headers"] ||
+      "Content-Type, Authorization, Accept, Origin, X-Requested-With, X-Api-Key",
+  );
+  res.header("Access-Control-Expose-Headers", "Content-Disposition");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+
+  return next();
+});
+
+app.use(express.json());
 
 registerSwagger(app);
 
