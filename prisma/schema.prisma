@@ -133,7 +133,8 @@ model CompanyClientContact {
   companyId String
   area      String
   nome      String?
-  email     String?
+  email     String? // compatibilidade: e-mail principal/primeiro e-mail
+  emails    String[] @default([])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
