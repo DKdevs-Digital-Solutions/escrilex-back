@@ -362,7 +362,14 @@ companyRoutes.get("/:id/checklists", async (req, res) => {
   const type = String(req.query.type || "").trim();
   if (type && !["ENTRADA", "SAIDA"].includes(type)) return res.status(400).json({ error: "invalid type" });
   const runs = await prisma.checklistRun.findMany({
-    where: { companyId: req.params.id, ...(type ? { type } : {}) },
+    where: {
+      companyId: req.params.id,
+      ...(type ? { type } : {}),
+      // Na tela de empresas deve retornar apenas processos/templates ativos.
+      // Runs antigos vinculados a templates inativos ficam preservados no banco,
+      // mas não aparecem mais como processo disponível da empresa.
+      template: { active: true },
+    },
     orderBy: { createdAt: "desc" },
     select: { id: true, type: true, templateId: true, snapshotTemplateName: true, snapshotTemplateVersion: true, createdAt: true, anchorAt: true, items: { where: { status: "CONCLUIDO" }, orderBy: { doneAt: "asc" }, take: 1, select: { snapshotItemCode: true, snapshotItemDescription: true } } },
   });
