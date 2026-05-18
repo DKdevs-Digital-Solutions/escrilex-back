@@ -1,5 +1,17 @@
 function buildPaths() {
   const authRequired = [{ bearerAuth: [] }];
+
+const clientContactSchema = {
+  type: "object",
+  required: ["area"],
+  properties: {
+    area: { type: "string", enum: ["Folha", "Fiscal", "Contábil", "Financeiro"] },
+    nome: { type: "string" },
+    email: { type: "string", format: "email", description: "Compatibilidade: e-mail principal/primeiro e-mail." },
+    emails: { type: "array", items: { type: "string", format: "email" }, example: ["folha@cliente.com.br", "rh@cliente.com.br"] },
+  },
+};
+
   const adminRequired = [{ bearerAuth: [] }];
 
   return {
@@ -380,10 +392,10 @@ function buildPaths() {
     },
     "/api/companies/{id}/client-contacts": {
       get: { tags: ["Empresas - Responsáveis do Cliente"], summary: "Listar responsáveis internos no cliente", security: authRequired, parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Responsáveis internos" } } },
-      post: { tags: ["Empresas - Responsáveis do Cliente"], summary: "Cadastrar responsável interno no cliente", security: authRequired, parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["area"], properties: { area: { type: "string", enum: ["Folha", "Fiscal", "Contábil", "Financeiro"] }, nome: { type: "string" }, email: { type: "string", format: "email" } } } } } }, responses: { 201: { description: "Responsável criado" } } },
+      post: { tags: ["Empresas - Responsáveis do Cliente"], summary: "Cadastrar responsável interno no cliente", description: "Aceita múltiplos e-mails no campo emails. O campo email continua aceito como compatibilidade e será tratado como e-mail principal.", security: authRequired, parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: clientContactSchema, examples: { multiploEmails: { value: { area: "Fiscal", nome: "Responsável Fiscal", emails: ["fiscal@cliente.com.br", "contabilidade@cliente.com.br"] } }, legadoEmailUnico: { value: { area: "Folha", nome: "Responsável RH", email: "rh@cliente.com.br" } } } } } }, responses: { 201: { description: "Responsável criado" } } },
     },
     "/api/companies/{id}/client-contacts/{contactId}": {
-      put: { tags: ["Empresas - Responsáveis do Cliente"], summary: "Editar responsável interno no cliente", security: authRequired, parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }, { name: "contactId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } }, responses: { 200: { description: "Responsável atualizado" } } },
+      put: { tags: ["Empresas - Responsáveis do Cliente"], summary: "Editar responsável interno no cliente", description: "Permite atualizar nome, área, email principal e lista emails com múltiplos endereços.", security: authRequired, parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }, { name: "contactId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: { ...clientContactSchema, required: [] }, examples: { atualizarEmails: { value: { emails: ["financeiro@cliente.com.br", "cobranca@cliente.com.br"] } } } } } }, responses: { 200: { description: "Responsável atualizado" } } },
       delete: { tags: ["Empresas - Responsáveis do Cliente"], summary: "Excluir responsável interno no cliente", security: authRequired, parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }, { name: "contactId", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Responsável removido" } } },
     },
     "/api/companies/{id}/access-credentials": {
@@ -396,10 +408,47 @@ function buildPaths() {
     "/api/integrations/cnpj/{cnpj}": {
       get: {
         tags: ["Integrações"],
-        summary: "Consultar CNPJ",
+        summary: "Consultar atendentes por CNPJ e setor",
+        description: "Retorna attendants por setor no formato usado pela integração/Blip. Cada item possui o nome do setor e a lista de e-mails dos responsáveis daquele setor.",
         security: authRequired,
         parameters: [{ name: "cnpj", in: "path", required: true, schema: { type: "string" } }],
-        responses: { 200: { description: "Dados do CNPJ" } },
+        responses: {
+          200: {
+            description: "Atendentes responsáveis por setor encontrados para o CNPJ",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    attendants: {
+                      type: "array",
+                      description: "Lista por setor, contendo apenas os e-mails dos responsáveis.",
+                      items: {
+                        type: "object",
+                        properties: {
+                          sector: { type: "string", example: "Fiscal" },
+                          responsibles: {
+                            type: "array",
+                            items: { type: "string", format: "email" },
+                            example: ["ana@empresa.com", "mario@empresa.com"],
+                          },
+                        },
+                      },
+                    },
+                    clientContacts: { type: "array", items: clientContactSchema },
+                  },
+                },
+                example: {
+                  attendants: [
+                    { sector: "Fiscal", responsibles: ["ana@empresa.com", "mario@empresa.com"] },
+                    { sector: "Compliance", responsibles: ["ana@empresa.com", "mario@empresa.com"] },
+                  ],
+                  clientContacts: [{ id: "resp_1", area: "Fiscal", nome: "Responsável Fiscal", email: "fiscal@cliente.com.br", emails: ["fiscal@cliente.com.br", "contabilidade@cliente.com.br"] }],
+                },
+              },
+            },
+          },
+        },
       },
     },
     "/api/templates": {
