@@ -44,13 +44,29 @@ function buildPaths() {
       get: {
         tags: ["Dashboard"],
         summary: "Resumo do dashboard",
-        description: "Clientes novos são contados por dataCadastro. Clientes que saíram são clientes inativos contados por inactivatedAt.",
+        description: "Indicadores gerenciais do SGE: entradas, saídas, alterações, tributação, ramo, perfil e responsáveis. Aceita period=7d, 30d, 365d ou período personalizado.",
         security: authRequired,
         parameters: [
+          { name: "period", in: "query", schema: { type: "string", enum: ["7d", "30d", "365d"] } },
           { name: "startDate", in: "query", schema: { type: "string", format: "date-time" } },
           { name: "endDate", in: "query", schema: { type: "string", format: "date-time" } },
         ],
         responses: { 200: { description: "Resumo retornado" } },
+      },
+    },
+    "/api/dashboard/drilldown": {
+      get: {
+        tags: ["Dashboard"],
+        summary: "Detalhamento dos indicadores do dashboard",
+        security: authRequired,
+        parameters: [
+          { name: "type", in: "query", required: true, schema: { type: "string", enum: ["entries", "exits", "tributacao", "ramo", "perfil", "responsibles", "changes"] } },
+          { name: "key", in: "query", schema: { type: "string" } },
+          { name: "period", in: "query", schema: { type: "string", enum: ["7d", "30d", "365d"] } },
+          { name: "startDate", in: "query", schema: { type: "string", format: "date-time" } },
+          { name: "endDate", in: "query", schema: { type: "string", format: "date-time" } },
+        ],
+        responses: { 200: { description: "Itens detalhados" } },
       },
     },
     "/api/admin/users": {
@@ -230,7 +246,8 @@ function buildPaths() {
         summary: "Listar empresas",
         security: authRequired,
         parameters: [
-          { name: "search", in: "query", schema: { type: "string" } },
+          { name: "search", in: "query", schema: { type: "string", description: "Busca por código, razão social, CNPJ ou grupo" } },
+          { name: "status", in: "query", schema: { type: "string" } },
           { name: "active", in: "query", schema: { type: "boolean" } },
         ],
         responses: { 200: { description: "Lista de empresas" } },
@@ -241,6 +258,19 @@ function buildPaths() {
         security: authRequired,
         requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["cnpj"], properties: { cnpj: { type: "string" }, razaoSocial: { type: "string" }, nomeFantasia: { type: "string" }, dataCadastro: { type: "string", format: "date-time" } } } } } },
         responses: { 201: { description: "Empresa criada" } },
+      },
+    },
+    "/api/companies/export": {
+      get: {
+        tags: ["Empresas"],
+        summary: "Exportar empresas em Excel ou CSV",
+        security: authRequired,
+        parameters: [
+          { name: "format", in: "query", schema: { type: "string", enum: ["xlsx", "csv"] } },
+          { name: "search", in: "query", schema: { type: "string" } },
+          { name: "status", in: "query", schema: { type: "string" } },
+        ],
+        responses: { 200: { description: "Arquivo exportado" } },
       },
     },
     "/api/companies/responsibles/by-cnpj": {
@@ -348,6 +378,21 @@ function buildPaths() {
         responses: { 200: { description: "Sócio removido" } },
       },
     },
+    "/api/companies/{id}/client-contacts": {
+      get: { tags: ["Empresas - Responsáveis do Cliente"], summary: "Listar responsáveis internos no cliente", security: authRequired, parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Responsáveis internos" } } },
+      post: { tags: ["Empresas - Responsáveis do Cliente"], summary: "Cadastrar responsável interno no cliente", security: authRequired, parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["area"], properties: { area: { type: "string", enum: ["Folha", "Fiscal", "Contábil", "Financeiro"] }, nome: { type: "string" }, email: { type: "string", format: "email" } } } } } }, responses: { 201: { description: "Responsável criado" } } },
+    },
+    "/api/companies/{id}/client-contacts/{contactId}": {
+      put: { tags: ["Empresas - Responsáveis do Cliente"], summary: "Editar responsável interno no cliente", security: authRequired, parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }, { name: "contactId", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } }, responses: { 200: { description: "Responsável atualizado" } } },
+      delete: { tags: ["Empresas - Responsáveis do Cliente"], summary: "Excluir responsável interno no cliente", security: authRequired, parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }, { name: "contactId", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Responsável removido" } } },
+    },
+    "/api/companies/{id}/access-credentials": {
+      get: { tags: ["Empresas - Acessos"], summary: "Listar acessos da empresa", security: authRequired, parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Acessos" } } },
+      put: { tags: ["Empresas - Acessos"], summary: "Salvar acessos da empresa", security: authRequired, parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["credentials"], properties: { credentials: { type: "array", items: { type: "object", required: ["service"], properties: { service: { type: "string", enum: ["Prefeitura", "Sefaz"] }, login: { type: "string" }, password: { type: "string" } } } } } } } } }, responses: { 200: { description: "Acessos salvos" } } },
+    },
+    "/api/companies/{id}/history": {
+      get: { tags: ["Empresas - Histórico"], summary: "Histórico/auditoria da empresa", security: authRequired, parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Histórico retornado" } } },
+    },
     "/api/integrations/cnpj/{cnpj}": {
       get: {
         tags: ["Integrações"],
@@ -359,14 +404,14 @@ function buildPaths() {
     },
     "/api/templates": {
       get: {
-        tags: ["Templates"],
-        summary: "Listar templates",
+        tags: ["Processos"],
+        summary: "Listar processos",
         security: authRequired,
         responses: { 200: { description: "Lista de templates" } },
       },
       post: {
-        tags: ["Templates"],
-        summary: "Criar template",
+        tags: ["Processos"],
+        summary: "Criar processo",
         security: authRequired,
         requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["type", "name"], properties: { type: { type: "string", enum: ["ENTRADA", "SAIDA"] }, name: { type: "string" } } } } } },
         responses: { 201: { description: "Template criado" } },
@@ -374,8 +419,8 @@ function buildPaths() {
     },
     "/api/templates/default/by-type/{type}": {
       get: {
-        tags: ["Templates"],
-        summary: "Template padrão por tipo",
+        tags: ["Processos"],
+        summary: "Processo padrão por tipo",
         security: authRequired,
         parameters: [{ name: "type", in: "path", required: true, schema: { type: "string", enum: ["ENTRADA", "SAIDA"] } }],
         responses: { 200: { description: "Template padrão" } },
@@ -383,15 +428,15 @@ function buildPaths() {
     },
     "/api/templates/{id}": {
       get: {
-        tags: ["Templates"],
-        summary: "Detalhar template",
+        tags: ["Processos"],
+        summary: "Detalhar processo",
         security: authRequired,
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: { 200: { description: "Template detalhado" } },
       },
       put: {
-        tags: ["Templates"],
-        summary: "Editar template",
+        tags: ["Processos"],
+        summary: "Editar processo",
         security: authRequired,
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } },
@@ -400,7 +445,7 @@ function buildPaths() {
     },
     "/api/templates/{id}/sections": {
       post: {
-        tags: ["Templates - Seções"],
+        tags: ["Processos - Seções"],
         summary: "Criar seção",
         security: authRequired,
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
@@ -410,7 +455,7 @@ function buildPaths() {
     },
     "/api/templates/sections/{sectionId}": {
       put: {
-        tags: ["Templates - Seções"],
+        tags: ["Processos - Seções"],
         summary: "Editar seção",
         security: authRequired,
         parameters: [{ name: "sectionId", in: "path", required: true, schema: { type: "string" } }],
@@ -418,7 +463,7 @@ function buildPaths() {
         responses: { 200: { description: "Seção atualizada" } },
       },
       delete: {
-        tags: ["Templates - Seções"],
+        tags: ["Processos - Seções"],
         summary: "Excluir seção",
         security: authRequired,
         parameters: [{ name: "sectionId", in: "path", required: true, schema: { type: "string" } }],
@@ -427,7 +472,7 @@ function buildPaths() {
     },
     "/api/templates/{id}/items": {
       post: {
-        tags: ["Templates - Itens"],
+        tags: ["Processos - Itens"],
         summary: "Criar item",
         security: authRequired,
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
@@ -437,7 +482,7 @@ function buildPaths() {
     },
     "/api/templates/items/{itemId}": {
       put: {
-        tags: ["Templates - Itens"],
+        tags: ["Processos - Itens"],
         summary: "Editar item",
         security: authRequired,
         parameters: [{ name: "itemId", in: "path", required: true, schema: { type: "string" } }],
@@ -445,7 +490,7 @@ function buildPaths() {
         responses: { 200: { description: "Item atualizado" } },
       },
       delete: {
-        tags: ["Templates - Itens"],
+        tags: ["Processos - Itens"],
         summary: "Excluir item",
         security: authRequired,
         parameters: [{ name: "itemId", in: "path", required: true, schema: { type: "string" } }],
