@@ -428,18 +428,42 @@ companyRoutes.delete("/:id/partners/:partnerId", async (req, res) => {
   res.json({ ok: true });
 });
 
-const contactSchema = z.object({ area: z.string().min(1), nome: nullableString, email: z.string().email().optional().nullable() });
+const contactSchema = z.object({
+  area: z.string().min(1),
+  nome: nullableString,
+  // Campo legado aceito para compatibilidade com front antigo.
+  email: z.string().email().optional().nullable(),
+  // Novo campo: permite 1+n e-mails no responsável interno do cliente.
+  emails: z.array(z.string().email()).optional(),
+});
+
+function normalizeContactEmails(data, existing = null) {
+  const hasEmails = Array.isArray(data.emails);
+  const rawEmails = hasEmails
+    ? data.emails
+    : (data.email ? [data.email] : (existing?.emails?.length ? existing.emails : []));
+
+  const emails = [...new Set(rawEmails.map((email) => String(email).trim().toLowerCase()).filter(Boolean))];
+  return { ...data, emails, email: emails[0] ?? data.email ?? null };
+}
+
+function formatClientContact(row) {
+  const emails = row.emails?.length ? row.emails : (row.email ? [row.email] : []);
+  return { ...row, email: row.email ?? emails[0] ?? null, emails };
+}
+
 companyRoutes.get("/:id/client-contacts", async (req, res) => {
   if (!(await assertCanAccessCompany(req, req.params.id))) return res.status(403).json({ error: "Forbidden" });
-  res.json(await prisma.companyClientContact.findMany({ where: { companyId: req.params.id }, orderBy: [{ area: "asc" }, { createdAt: "desc" }] }));
+  const rows = await prisma.companyClientContact.findMany({ where: { companyId: req.params.id }, orderBy: [{ area: "asc" }, { createdAt: "desc" }] });
+  res.json(rows.map(formatClientContact));
 });
 companyRoutes.post("/:id/client-contacts", async (req, res) => {
   if (!(await assertCanAccessCompany(req, req.params.id))) return res.status(403).json({ error: "Forbidden" });
   const body = contactSchema.safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
-  const row = await prisma.companyClientContact.create({ data: { companyId: req.params.id, ...body.data } });
+  const row = await prisma.companyClientContact.create({ data: { companyId: req.params.id, ...normalizeContactEmails(body.data) } });
   await audit(req, "COMPANY_CLIENT_CONTACT_CREATE", "CompanyClientContact", row.id, undefined, row);
-  res.status(201).json(row);
+  res.status(201).json(formatClientContact(row));
 });
 companyRoutes.put("/:id/client-contacts/:contactId", async (req, res) => {
   if (!(await assertCanAccessCompany(req, req.params.id))) return res.status(403).json({ error: "Forbidden" });
@@ -447,9 +471,9 @@ companyRoutes.put("/:id/client-contacts/:contactId", async (req, res) => {
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
   const before = await prisma.companyClientContact.findFirst({ where: { id: req.params.contactId, companyId: req.params.id } });
   if (!before) return res.status(404).json({ error: "Contact not found" });
-  const row = await prisma.companyClientContact.update({ where: { id: req.params.contactId }, data: body.data });
+  const row = await prisma.companyClientContact.update({ where: { id: req.params.contactId }, data: normalizeContactEmails(body.data, before) });
   await audit(req, "COMPANY_CLIENT_CONTACT_UPDATE", "CompanyClientContact", row.id, before, row);
-  res.json(row);
+  res.json(formatClientContact(row));
 });
 companyRoutes.delete("/:id/client-contacts/:contactId", async (req, res) => {
   if (!(await assertCanAccessCompany(req, req.params.id))) return res.status(403).json({ error: "Forbidden" });
