@@ -331,7 +331,8 @@ const clientContactSchema = {
     "/api/companies/{id}/checklists": {
       get: {
         tags: ["Empresas"],
-        summary: "Listar checklists da empresa",
+        summary: "Listar checklists/processos ativos da empresa",
+        description: "Retorna somente checklists vinculados a templates/processos ativos. Templates inativos ficam preservados no histórico, mas não aparecem na tela da empresa.",
         security: authRequired,
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" } },
