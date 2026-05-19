@@ -413,12 +413,63 @@ function buildPaths() {
       },
     },
     "/api/companies/{id}/responsibles": {
-      put: {
+      get: {
         tags: ["Empresas"],
-        summary: "Definir responsáveis por setor",
+        summary: "Listar responsáveis por setor",
         security: authRequired,
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } },
+        responses: { 200: { description: "Responsáveis da empresa" } },
+      },
+      put: {
+        tags: ["Empresas"],
+        summary: "Definir responsáveis por setor, permitindo múltiplos e-mails/usuários por setor",
+        security: authRequired,
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["responsibles"],
+                properties: {
+                  reason: { type: "string" },
+                  responsibles: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      required: ["sectorId"],
+                      properties: {
+                        sectorId: { type: "string" },
+                        userId: { type: "string", description: "Compatibilidade com o formato antigo" },
+                        userIds: { type: "array", items: { type: "string" } },
+                        email: { type: "string", format: "email" },
+                        emails: { type: "array", items: { type: "string", format: "email" } },
+                        users: {
+                          type: "array",
+                          items: {
+                            type: "object",
+                            properties: {
+                              userId: { type: "string" },
+                              email: { type: "string", format: "email" },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+                example: {
+                  reason: "Carteira atualizada",
+                  responsibles: [
+                    { sectorId: "SETOR_ID_FISCAL", userIds: ["USER_ID_1", "USER_ID_2"] },
+                    { sectorId: "SETOR_ID_CONTABIL", emails: ["analista1@empresa.com", "analista2@empresa.com"] },
+                  ],
+                },
+              },
+            },
+          },
+        },
         responses: { 200: { description: "Responsáveis atualizados" } },
       },
     },
