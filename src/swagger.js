@@ -1,3 +1,117 @@
+
+function buildV5Paths() {
+  const authRequired = [{ bearerAuth: [] }];
+  return {
+    "/api/expectation-matrix/options": {
+      get: {
+        tags: ["Matriz de Expectativas"],
+        summary: "Metadados, colunas, opções e usuários da Matriz de Expectativas",
+        security: authRequired,
+        responses: { 200: { description: "Opções retornadas" } },
+      },
+    },
+    "/api/expectation-matrix": {
+      get: {
+        tags: ["Matriz de Expectativas"],
+        summary: "Listar a Matriz de Expectativas em formato de tabela",
+        security: authRequired,
+        parameters: [
+          { name: "search", in: "query", schema: { type: "string" } },
+          { name: "status", in: "query", schema: { type: "string" } },
+          { name: "grupo", in: "query", schema: { type: "string" } },
+          { name: "tributacao", in: "query", schema: { type: "string" } },
+          { name: "ramo", in: "query", schema: { type: "string" } },
+          { name: "perfil", in: "query", schema: { type: "string" } },
+          { name: "limit", in: "query", schema: { type: "integer" } },
+          { name: "offset", in: "query", schema: { type: "integer" } },
+        ],
+        responses: { 200: { description: "Linhas retornadas" } },
+      },
+    },
+    "/api/expectation-matrix/{companyId}": {
+      get: {
+        tags: ["Matriz de Expectativas"],
+        summary: "Detalhar linha da Matriz de Expectativas por empresa",
+        security: authRequired,
+        parameters: [{ name: "companyId", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Linha retornada" } },
+      },
+      put: {
+        tags: ["Matriz de Expectativas"],
+        summary: "Editar dados base da Matriz de Expectativas",
+        security: authRequired,
+        parameters: [{ name: "companyId", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } },
+        responses: { 200: { description: "Linha atualizada" } },
+      },
+      patch: {
+        tags: ["Matriz de Expectativas"],
+        summary: "Editar parcialmente dados base da Matriz de Expectativas",
+        security: authRequired,
+        parameters: [{ name: "companyId", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } },
+        responses: { 200: { description: "Linha atualizada" } },
+      },
+    },
+    "/api/dashboard/details": {
+      get: {
+        tags: ["Dashboard"],
+        summary: "Drill-down dos indicadores do dashboard",
+        security: authRequired,
+        parameters: [
+          { name: "type", in: "query", required: true, schema: { type: "string", enum: ["entries", "exits", "alterations", "tributacao", "ramo", "perfil", "status", "responsible"] } },
+          { name: "value", in: "query", schema: { type: "string" } },
+          { name: "startDate", in: "query", schema: { type: "string", format: "date-time" } },
+          { name: "endDate", in: "query", schema: { type: "string", format: "date-time" } },
+          { name: "limit", in: "query", schema: { type: "integer" } },
+          { name: "offset", in: "query", schema: { type: "integer" } },
+        ],
+        responses: { 200: { description: "Detalhamento retornado" } },
+      },
+    },
+    "/api/companies/{id}/client-contacts": {
+      get: {
+        tags: ["Empresas - Contatos internos do cliente"],
+        summary: "Listar responsáveis internos no cliente",
+        security: authRequired,
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Contatos retornados" } },
+      },
+      post: {
+        tags: ["Empresas - Contatos internos do cliente"],
+        summary: "Cadastrar responsável interno no cliente",
+        security: authRequired,
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["area", "name"], properties: { area: { type: "string", enum: ["Folha", "Fiscal", "Contábil", "Financeiro"] }, name: { type: "string" }, email: { type: "string" }, phone: { type: "string" } } } } } },
+        responses: { 201: { description: "Contato criado" } },
+      },
+    },
+    "/api/companies/{id}/client-contacts/{contactId}": {
+      put: {
+        tags: ["Empresas - Contatos internos do cliente"],
+        summary: "Editar responsável interno no cliente",
+        security: authRequired,
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" } },
+          { name: "contactId", in: "path", required: true, schema: { type: "string" } },
+        ],
+        requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } },
+        responses: { 200: { description: "Contato atualizado" } },
+      },
+      delete: {
+        tags: ["Empresas - Contatos internos do cliente"],
+        summary: "Excluir responsável interno no cliente",
+        security: authRequired,
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" } },
+          { name: "contactId", in: "path", required: true, schema: { type: "string" } },
+        ],
+        responses: { 200: { description: "Contato removido" } },
+      },
+    },
+  };
+}
+
 function buildPaths() {
   const authRequired = [{ bearerAuth: [] }];
   const adminRequired = [{ bearerAuth: [] }];
@@ -501,7 +615,7 @@ export function buildOpenApiSpec() {
         },
       },
     },
-    paths: buildPaths(),
+    paths: { ...buildPaths(), ...buildV5Paths() },
   };
 }
 

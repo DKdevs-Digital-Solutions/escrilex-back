@@ -11,6 +11,7 @@ import { integrationRoutes } from "./routes/integrationRoutes.js";
 import { lookupRoutes } from "./routes/lookupRoutes.js";
 import { dashboardRoutes } from "./routes/dashboardRoutes.js";
 import { emailAccountRoutes } from "./routes/emailAccountRoutes.js";
+import { expectationMatrixRoutes } from "./routes/expectationMatrixRoutes.js";
 import { scanAndNotifyOverdue } from "./overdueScanner.js";
 import { registerSwagger } from "./swagger.js";
 
@@ -38,6 +39,7 @@ app.use("/api/admin", requireRoles(RoleName.ADMIN), adminRoutes);
 app.use("/api/admin", requireRoles(RoleName.ADMIN), emailAccountRoutes);
 app.use("/api/lookup", requireRoles(RoleName.ADMIN, RoleName.GESTOR_EMPRESA), lookupRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/expectation-matrix", expectationMatrixRoutes);
 app.use("/api/companies", companyRoutes);
 app.use("/api/integrations", integrationRoutes);
 app.use("/api/templates", requireRoles(RoleName.ADMIN, RoleName.GESTOR_EMPRESA), templateRoutes);
