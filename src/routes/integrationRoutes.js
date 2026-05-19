@@ -24,41 +24,19 @@ function buildCnpjWhere(rawCnpj, cnpj) {
   return { OR: or };
 }
 
-function buildAttendantsBySector(responsibles) {
-  const grouped = new Map();
-
-  for (const responsible of responsibles) {
-    const sectorName = responsible.sector?.name || "Sem setor";
-    const email = responsible.user?.email;
-
-    if (!grouped.has(sectorName)) {
-      grouped.set(sectorName, {
-        sector: sectorName,
-        responsibles: [],
-      });
-    }
-
-    if (email && !grouped.get(sectorName).responsibles.includes(email)) {
-      grouped.get(sectorName).responsibles.push(email);
-    }
-  }
-
-  return Array.from(grouped.values()).sort((a, b) => a.sector.localeCompare(b.sector));
-}
-
-function mapClientResponsible(contact) {
-  const emails = Array.isArray(contact.emails) && contact.emails.length
-    ? contact.emails
-    : (contact.email ? [contact.email] : []);
-
+function mapAttendant(responsible) {
   return {
-    id: contact.id,
-    area: contact.area,
-    nome: contact.nome,
-    email: contact.email || emails[0] || null,
-    emails,
-    createdAt: contact.createdAt,
-    updatedAt: contact.updatedAt,
+    id: responsible.user.id,
+    name: responsible.user.name,
+    email: responsible.user.email,
+    active: responsible.user.active,
+    sector: {
+      id: responsible.sector.id,
+      name: responsible.sector.name,
+      active: responsible.sector.active,
+    },
+    assignedAt: responsible.assignedAt,
+    assignedBy: responsible.assignedBy,
   };
 }
 
@@ -82,9 +60,6 @@ async function getResponsiblesByCnpj(req, res) {
             user: true,
           },
         },
-        clientContacts: {
-          orderBy: [{ area: "asc" }, { nome: "asc" }],
-        },
       },
     });
 
@@ -92,13 +67,9 @@ async function getResponsiblesByCnpj(req, res) {
       return res.status(404).json({ error: "Empresa não encontrada para o CNPJ informado." });
     }
 
-    const attendants = buildAttendantsBySector(company.responsibles);
-    const clientContacts = company.clientContacts.map(mapClientResponsible);
+    const attendants = company.responsibles.map(mapAttendant);
 
-    return res.json({
-      attendants,
-      clientContacts,
-    });
+    return res.json({ attendants });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: "Erro ao consultar responsáveis da empresa." });
