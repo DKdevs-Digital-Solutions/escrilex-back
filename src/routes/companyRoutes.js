@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { randomUUID } from "crypto";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { audit } from "../audit.js";
@@ -15,6 +16,10 @@ function parseBooleanParam(value) {
 
 function normalizeCnpj(value) {
   return String(value ?? "").replace(/\D/g, "");
+}
+
+function isInactiveBusinessStatus(status) {
+  return ["Encerrado", "Baixada"].includes(String(status || ""));
 }
 
 const emptyToNull = (value) => (value === "" || value === null ? null : value);
@@ -136,22 +141,27 @@ companyRoutes.get("/", async (req, res) => {
   const search = String(req.query.search || "").trim();
   const normalizedSearchCnpj = normalizeCnpj(search);
   const active = parseBooleanParam(req.query.active);
+  const status = String(req.query.status || "").trim();
 
   const companies = await prisma.company.findMany({
     where: {
       ...(active === undefined ? {} : { active }),
+      ...(status ? { situacao: status } : {}),
       ...(search
         ? {
             OR: [
               { cnpj: { contains: search } },
               ...(normalizedSearchCnpj && normalizedSearchCnpj !== search ? [{ cnpj: { contains: normalizedSearchCnpj } }] : []),
+              { cod: { contains: search, mode: "insensitive" } },
               { razaoSocial: { contains: search, mode: "insensitive" } },
               { nomeFantasia: { contains: search, mode: "insensitive" } },
+              { grupo: { contains: search, mode: "insensitive" } },
+              { situacao: { contains: search, mode: "insensitive" } },
             ],
           }
         : {}),
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ cod: "asc" }, { createdAt: "desc" }],
   });
 
   res.json(companies);
@@ -229,21 +239,29 @@ companyRoutes.put("/:id", async (req, res) => {
 });
 
 companyRoutes.patch("/:id/status", async (req, res) => {
-  const body = z.object({ active: requiredBoolean }).safeParse(req.body);
+  const body = z.object({
+    active: requiredBoolean.optional(),
+    status: z.string().min(1).optional(),
+    situacao: z.string().min(1).optional(),
+  }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
   const before = await prisma.company.findUnique({ where: { id: req.params.id } });
   if (!before) return res.status(404).json({ error: "Not found" });
 
+  const status = body.data.status ?? body.data.situacao;
+  const active = body.data.active ?? (status ? !isInactiveBusinessStatus(status) : before.active);
+
   const updated = await prisma.company.update({
     where: { id: req.params.id },
     data: {
-      active: body.data.active,
-      inactivatedAt: body.data.active ? null : new Date(),
+      active,
+      inactivatedAt: active ? null : new Date(),
+      ...(status ? { situacao: status, dataSituacao: new Date() } : {}),
     },
   });
 
-  await audit(req, body.data.active ? "COMPANY_ACTIVATE" : "COMPANY_INACTIVATE", "Company", updated.id, before, updated);
+  await audit(req, active ? "COMPANY_STATUS_UPDATE" : "COMPANY_INACTIVATE", "Company", updated.id, before, updated);
   res.json(updated);
 });
 
@@ -425,5 +443,90 @@ companyRoutes.delete("/:id/partners/:partnerId", async (req, res) => {
   await prisma.companyPartner.delete({ where: { id: req.params.partnerId } });
   await audit(req, "COMPANY_PARTNER_DELETE", "CompanyPartner", existing.id, existing, undefined);
 
+  res.json({ ok: true });
+});
+
+
+const clientContactSchema = z.object({
+  area: z.enum(["Folha", "Fiscal", "Contábil", "Financeiro"]),
+  name: z.string().min(1),
+  email: z.string().email().optional().nullable(),
+  phone: z.string().optional().nullable(),
+});
+
+companyRoutes.get("/:id/client-contacts", async (req, res) => {
+  const contacts = await prisma.$queryRawUnsafe(
+    `SELECT "id", "companyId", "area", "name", "email", "phone", "createdAt", "updatedAt"
+     FROM "CompanyClientContact"
+     WHERE "companyId" = $1
+     ORDER BY "area" ASC, "name" ASC`,
+    req.params.id,
+  );
+  res.json(contacts);
+});
+
+companyRoutes.post("/:id/client-contacts", async (req, res) => {
+  const body = clientContactSchema.safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: body.error.flatten() });
+
+  const company = await prisma.company.findUnique({ where: { id: req.params.id } });
+  if (!company) return res.status(404).json({ error: "Company not found" });
+
+  const id = randomUUID();
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "CompanyClientContact" ("id", "companyId", "area", "name", "email", "phone", "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    id,
+    req.params.id,
+    body.data.area,
+    body.data.name,
+    body.data.email ?? null,
+    body.data.phone ?? null,
+  );
+
+  const created = (await prisma.$queryRawUnsafe(`SELECT * FROM "CompanyClientContact" WHERE "id" = $1`, id))[0];
+  await audit(req, "COMPANY_CLIENT_CONTACT_CREATE", "CompanyClientContact", id, undefined, created);
+  res.status(201).json(created);
+});
+
+companyRoutes.put("/:id/client-contacts/:contactId", async (req, res) => {
+  const body = clientContactSchema.partial().safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: body.error.flatten() });
+
+  const before = (await prisma.$queryRawUnsafe(
+    `SELECT * FROM "CompanyClientContact" WHERE "id" = $1 AND "companyId" = $2 LIMIT 1`,
+    req.params.contactId,
+    req.params.id,
+  ))[0];
+  if (!before) return res.status(404).json({ error: "Contact not found" });
+
+  const fields = Object.entries(body.data).filter(([, value]) => value !== undefined);
+  if (fields.length > 0) {
+    const assignments = fields.map(([key], index) => `"${key}" = $${index + 1}`);
+    const values = fields.map(([, value]) => value ?? null);
+    values.push(req.params.contactId, req.params.id);
+    await prisma.$executeRawUnsafe(
+      `UPDATE "CompanyClientContact"
+       SET ${assignments.join(", ")}, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "id" = $${values.length - 1} AND "companyId" = $${values.length}`,
+      ...values,
+    );
+  }
+
+  const updated = (await prisma.$queryRawUnsafe(`SELECT * FROM "CompanyClientContact" WHERE "id" = $1`, req.params.contactId))[0];
+  await audit(req, "COMPANY_CLIENT_CONTACT_UPDATE", "CompanyClientContact", req.params.contactId, before, updated);
+  res.json(updated);
+});
+
+companyRoutes.delete("/:id/client-contacts/:contactId", async (req, res) => {
+  const before = (await prisma.$queryRawUnsafe(
+    `SELECT * FROM "CompanyClientContact" WHERE "id" = $1 AND "companyId" = $2 LIMIT 1`,
+    req.params.contactId,
+    req.params.id,
+  ))[0];
+  if (!before) return res.status(404).json({ error: "Contact not found" });
+
+  await prisma.$executeRawUnsafe(`DELETE FROM "CompanyClientContact" WHERE "id" = $1 AND "companyId" = $2`, req.params.contactId, req.params.id);
+  await audit(req, "COMPANY_CLIENT_CONTACT_DELETE", "CompanyClientContact", req.params.contactId, before, undefined);
   res.json({ ok: true });
 });
