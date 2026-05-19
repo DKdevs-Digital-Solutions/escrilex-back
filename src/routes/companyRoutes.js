@@ -137,6 +137,104 @@ const companyWritableFields = [
 
 const companyInclude = { responsibles: { include: { sector: true, user: true } } };
 
+
+const responsibleUserRefSchema = z
+  .object({
+    userId: z.string().min(1).optional(),
+    email: z.string().email().optional(),
+  })
+  .refine((value) => Boolean(value.userId || value.email), {
+    message: "Informe userId ou email para o responsável.",
+  });
+
+const responsibleItemSchema = z
+  .object({
+    sectorId: z.string().min(1),
+    userId: z.string().min(1).optional(),
+    userIds: z.array(z.string().min(1)).optional(),
+    email: z.string().email().optional(),
+    emails: z.array(z.string().email()).optional(),
+    users: z.array(responsibleUserRefSchema).optional(),
+  })
+  .refine(
+    (value) =>
+      value.userId !== undefined ||
+      value.userIds !== undefined ||
+      value.email !== undefined ||
+      value.emails !== undefined ||
+      value.users !== undefined,
+    {
+      message: "Informe userId, userIds, email, emails ou users. Para limpar o setor, envie userIds: [].",
+    },
+  );
+
+const responsiblesPayloadSchema = z.object({
+  responsibles: z.array(responsibleItemSchema),
+  reason: z.string().optional(),
+});
+
+function normalizeEmailForLookup(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function groupResponsibleInput(responsibles) {
+  const bySector = new Map();
+
+  for (const item of responsibles) {
+    const current = bySector.get(item.sectorId) || { sectorId: item.sectorId, userIds: new Set(), emails: new Set() };
+
+    if (item.userId) current.userIds.add(item.userId);
+    for (const userId of item.userIds || []) current.userIds.add(userId);
+
+    if (item.email) current.emails.add(normalizeEmailForLookup(item.email));
+    for (const email of item.emails || []) current.emails.add(normalizeEmailForLookup(email));
+
+    for (const user of item.users || []) {
+      if (user.userId) current.userIds.add(user.userId);
+      if (user.email) current.emails.add(normalizeEmailForLookup(user.email));
+    }
+
+    bySector.set(item.sectorId, current);
+  }
+
+  return Array.from(bySector.values()).map((item) => ({
+    sectorId: item.sectorId,
+    userIds: Array.from(item.userIds),
+    emails: Array.from(item.emails).filter(Boolean),
+  }));
+}
+
+function formatResponsibleRow(row) {
+  return {
+    id: row.id,
+    assignedAt: row.assignedAt,
+    sector: row.sector ? { id: row.sector.id, name: row.sector.name } : { id: row.sectorId, name: null },
+    user: row.user ? { id: row.user.id, name: row.user.name, email: row.user.email } : { id: row.userId, name: null, email: null },
+  };
+}
+
+function groupResponsibleRows(rows) {
+  const grouped = new Map();
+
+  for (const row of rows) {
+    const sectorId = row.sector?.id ?? row.sectorId;
+    const current = grouped.get(sectorId) || {
+      sector: row.sector ? { id: row.sector.id, name: row.sector.name } : { id: sectorId, name: null },
+      users: [],
+    };
+
+    current.users.push(
+      row.user ? { id: row.user.id, name: row.user.name, email: row.user.email } : { id: row.userId, name: null, email: null },
+    );
+    grouped.set(sectorId, current);
+  }
+
+  return Array.from(grouped.values()).map((item) => ({
+    ...item,
+    emails: item.users.map((user) => user.email).filter(Boolean),
+  }));
+}
+
 companyRoutes.get("/", async (req, res) => {
   const search = String(req.query.search || "").trim();
   const normalizedSearchCnpj = normalizeCnpj(search);
@@ -203,10 +301,8 @@ companyRoutes.get("/responsibles/by-cnpj", async (req, res) => {
     cnpj: company.cnpj,
     companyId: company.id,
     razaoSocial: company.razaoSocial,
-    responsibles: company.responsibles.map((r) => ({
-      sector: { id: r.sector.id, name: r.sector.name },
-      user: { id: r.user.id, name: r.user.name, email: r.user.email },
-    })),
+    responsibles: company.responsibles.map(formatResponsibleRow),
+    grouped: groupResponsibleRows(company.responsibles),
   });
 });
 
@@ -322,57 +418,158 @@ companyRoutes.get("/:id/checklists", async (req, res) => {
   );
 });
 
+companyRoutes.get("/:id/responsibles", async (req, res) => {
+  const company = await prisma.company.findUnique({ where: { id: req.params.id } });
+  if (!company) return res.status(404).json({ error: "Company not found" });
+
+  const responsibles = await prisma.companySectorResponsible.findMany({
+    where: { companyId: company.id },
+    include: { sector: true, user: true },
+    orderBy: [{ assignedAt: "desc" }],
+  });
+
+  res.json({
+    companyId: company.id,
+    responsibles: responsibles.map(formatResponsibleRow),
+    grouped: groupResponsibleRows(responsibles),
+  });
+});
+
 companyRoutes.put("/:id/responsibles", async (req, res) => {
-  const body = z
-    .object({
-      responsibles: z.array(z.object({ sectorId: z.string(), userId: z.string() })),
-      reason: z.string().optional(),
-    })
-    .safeParse(req.body);
+  const body = responsiblesPayloadSchema.safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
   const actorId = req.user.id;
   const company = await prisma.company.findUnique({ where: { id: req.params.id } });
   if (!company) return res.status(404).json({ error: "Company not found" });
 
-  for (const r of body.data.responsibles) {
-    const existing = await prisma.companySectorResponsible.findUnique({
-      where: { companyId_sectorId: { companyId: company.id, sectorId: r.sectorId } },
-    });
+  const groupedInput = groupResponsibleInput(body.data.responsibles);
+  const sectorIds = groupedInput.map((item) => item.sectorId);
 
-    if (existing) {
-      await prisma.companySectorResponsibleHistory.updateMany({
-        where: { companyId: company.id, sectorId: r.sectorId, endAt: null },
-        data: { endAt: new Date() },
-      });
-      await prisma.companySectorResponsible.update({
-        where: { id: existing.id },
-        data: { userId: r.userId, assignedAt: new Date(), assignedBy: actorId },
-      });
-    } else {
-      await prisma.companySectorResponsible.create({
-        data: { companyId: company.id, sectorId: r.sectorId, userId: r.userId, assignedBy: actorId },
-      });
-      await prisma.companySectorResponsibleHistory.updateMany({
-        where: { companyId: company.id, sectorId: r.sectorId, endAt: null },
-        data: { endAt: new Date() },
-      });
+  const sectors = await prisma.sector.findMany({ where: { id: { in: sectorIds } } });
+  const foundSectorIds = new Set(sectors.map((sector) => sector.id));
+  const missingSectorIds = sectorIds.filter((sectorId) => !foundSectorIds.has(sectorId));
+  if (missingSectorIds.length) {
+    return res.status(400).json({ error: "Sector not found", sectorIds: missingSectorIds });
+  }
+
+  const requestedUserIds = Array.from(new Set(groupedInput.flatMap((item) => item.userIds)));
+  const requestedEmails = Array.from(new Set(groupedInput.flatMap((item) => item.emails)));
+  const userOr = [
+    ...(requestedUserIds.length ? [{ id: { in: requestedUserIds } }] : []),
+    ...(requestedEmails.length ? [{ email: { in: requestedEmails, mode: "insensitive" } }] : []),
+  ];
+
+  const users = userOr.length ? await prisma.user.findMany({ where: { OR: userOr } }) : [];
+  const usersById = new Map(users.map((user) => [user.id, user]));
+  const usersByEmail = new Map(users.map((user) => [normalizeEmailForLookup(user.email), user]));
+
+  const missingUsers = [];
+  const desiredBySector = new Map();
+
+  for (const item of groupedInput) {
+    const desiredUserIds = new Set();
+
+    for (const userId of item.userIds) {
+      const user = usersById.get(userId);
+      if (user) desiredUserIds.add(user.id);
+      else missingUsers.push({ sectorId: item.sectorId, userId });
     }
 
-    await prisma.companySectorResponsibleHistory.create({
-      data: {
-        companyId: company.id,
-        sectorId: r.sectorId,
-        userId: r.userId,
-        startAt: new Date(),
-        changedBy: actorId,
-        reason: body.data.reason,
-      },
+    for (const email of item.emails) {
+      const user = usersByEmail.get(normalizeEmailForLookup(email));
+      if (user) desiredUserIds.add(user.id);
+      else missingUsers.push({ sectorId: item.sectorId, email });
+    }
+
+    desiredBySector.set(item.sectorId, desiredUserIds);
+  }
+
+  if (missingUsers.length) {
+    return res.status(400).json({
+      error: "Responsible user not found",
+      message: "Os e-mails informados precisam pertencer a usuários cadastrados no sistema.",
+      missingUsers,
     });
   }
 
-  await audit(req, "COMPANY_RESPONSIBLES_SET", "Company", company.id, undefined, body.data);
-  res.json({ ok: true });
+  const before = await prisma.companySectorResponsible.findMany({
+    where: { companyId: company.id, sectorId: { in: sectorIds } },
+    include: { sector: true, user: true },
+    orderBy: [{ assignedAt: "desc" }],
+  });
+
+  const now = new Date();
+
+  for (const sectorId of sectorIds) {
+    const desiredUserIds = desiredBySector.get(sectorId) || new Set();
+    const existingForSector = before.filter((row) => row.sectorId === sectorId);
+    const seenExistingUsers = new Set();
+    const duplicateRows = [];
+
+    for (const row of existingForSector) {
+      if (seenExistingUsers.has(row.userId)) duplicateRows.push(row);
+      else seenExistingUsers.add(row.userId);
+    }
+
+    const toRemove = existingForSector.filter((row) => !desiredUserIds.has(row.userId)).concat(duplicateRows);
+    const toRemoveIds = Array.from(new Set(toRemove.map((row) => row.id)));
+    const toCloseHistoryUserIds = Array.from(new Set(existingForSector.filter((row) => !desiredUserIds.has(row.userId)).map((row) => row.userId)));
+
+    if (toRemoveIds.length) {
+      await prisma.companySectorResponsible.deleteMany({ where: { id: { in: toRemoveIds } } });
+    }
+
+    if (toCloseHistoryUserIds.length) {
+      await prisma.companySectorResponsibleHistory.updateMany({
+        where: { companyId: company.id, sectorId, userId: { in: toCloseHistoryUserIds }, endAt: null },
+        data: { endAt: now },
+      });
+    }
+
+    const existingKeptUserIds = new Set(existingForSector.filter((row) => !toRemoveIds.includes(row.id)).map((row) => row.userId));
+    const toAddUserIds = Array.from(desiredUserIds).filter((userId) => !existingKeptUserIds.has(userId));
+
+    for (const userId of toAddUserIds) {
+      await prisma.companySectorResponsibleHistory.updateMany({
+        where: { companyId: company.id, sectorId, userId, endAt: null },
+        data: { endAt: now },
+      });
+
+      await prisma.companySectorResponsible.create({
+        data: { companyId: company.id, sectorId, userId, assignedAt: now, assignedBy: actorId },
+      });
+
+      await prisma.companySectorResponsibleHistory.create({
+        data: {
+          companyId: company.id,
+          sectorId,
+          userId,
+          startAt: now,
+          changedBy: actorId,
+          reason: body.data.reason,
+        },
+      });
+    }
+  }
+
+  const updated = await prisma.companySectorResponsible.findMany({
+    where: { companyId: company.id, sectorId: { in: sectorIds } },
+    include: { sector: true, user: true },
+    orderBy: [{ assignedAt: "desc" }],
+  });
+
+  await audit(req, "COMPANY_RESPONSIBLES_SET", "Company", company.id, before, {
+    input: body.data,
+    updated: updated.map(formatResponsibleRow),
+  });
+
+  res.json({
+    ok: true,
+    companyId: company.id,
+    responsibles: updated.map(formatResponsibleRow),
+    grouped: groupResponsibleRows(updated),
+  });
 });
 
 companyRoutes.get("/:id/partners", async (req, res) => {
