@@ -46,53 +46,18 @@ model Company {
   dataTributacao        DateTime?
   motivoEntrada         String?
   situacao              String?
-  status                String?
   dataSituacao          DateTime?
   ramo                  String?
   consultoria           String?
   banco                 String?
   perfil                String?
-  perfilComercial       String?
   licitacao             String?
   responsavelComercial  String?
-  matrizFilial          String?
-  observacoes           String?
-  reunioesFechamentos   String?
-  fechamentoContabil    String?
-  analiseCompliance     String?
-  cobrancaServExtras    Boolean?
-  complexidadeFiscal    String?
-  complexidadeContabil  String?
-  informacoesNegociosMarketing String?
   dataEntrada           DateTime?
-  dataSaida             DateTime?
-  dataEntradaFiscal     DateTime?
-  dataSaidaFiscal       DateTime?
-  dataEntradaContabil   DateTime?
-  dataSaidaContabil     DateTime?
-  dataEntradaFolha      DateTime?
-  dataSaidaFolha        DateTime?
-  dataEntradaConsultoria DateTime?
-  dataSaidaConsultoria  DateTime?
   dataInicioCobranca    DateTime?
   dataFimCobranca       DateTime?
-  dataInicioCobrancaFiscal DateTime?
-  dataFimCobrancaFiscal DateTime?
-  dataInicioCobrancaContabil DateTime?
-  dataFimCobrancaContabil DateTime?
-  dataInicioCobrancaFolha DateTime?
-  dataFimCobrancaFolha  DateTime?
-  dataInicioCobrancaConsultoria DateTime?
-  dataFimCobrancaConsultoria DateTime?
   motivoSaidaResumo     String?
-  motivoSaida           String?
   qtdeInicialFolha      Int?
-  prefeituraLogin       String?
-  prefeituraSenha       String?
-  sefazLogin            String?
-  sefazSenha            String?
-  blockedAt             DateTime?
-  blockedBy             String?
   active        Boolean  @default(true)
   inactivatedAt DateTime?
 
@@ -103,8 +68,6 @@ model Company {
   responsibles       CompanySectorResponsible[]
   responsibleHistory CompanySectorResponsibleHistory[]
   partners           CompanyPartner[]
-  clientContacts     CompanyClientContact[]
-  accessCredentials  CompanyAccessCredential[]
 
   @@map("Company")
 }
@@ -125,38 +88,6 @@ model CompanyPartner {
 
   @@index([companyId])
   @@map("CompanyPartner")
-}
-
-
-model CompanyClientContact {
-  id        String   @id @default(cuid())
-  companyId String
-  area      String
-  nome      String?
-  email     String? // compatibilidade: e-mail principal/primeiro e-mail
-  emails    String[] @default([])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  @@index([companyId])
-  @@map("CompanyClientContact")
-}
-
-model CompanyAccessCredential {
-  id        String   @id @default(cuid())
-  companyId String
-  service   String
-  login     String?
-  password  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  @@unique([companyId, service])
-  @@map("CompanyAccessCredential")
 }
 
 model Sector {
