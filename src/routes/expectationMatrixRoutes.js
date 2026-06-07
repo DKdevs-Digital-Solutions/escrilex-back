@@ -340,16 +340,22 @@ async function enrichRowsWithSectorResponsibles(rows, sectors) {
     },
   });
 
-  // Indexa: companyId → sectorName → email
+  // Indexa: companyId → sectorName → [email, email, ...]
   const byCompany = {};
   for (const r of responsibles) {
     if (!byCompany[r.companyId]) byCompany[r.companyId] = {};
-    byCompany[r.companyId][r.sector.name] = r.user.email;
+    const key = r.sector.name;
+    if (!byCompany[r.companyId][key]) byCompany[r.companyId][key] = [];
+    byCompany[r.companyId][key].push(r.user.email);
   }
 
   return rows.map((row) => {
     const sectorData = Object.fromEntries(
-      sectors.map((s) => [s.name, byCompany[row.companyId]?.[s.name] ?? null]),
+      sectors.map((s) => {
+        const emails = byCompany[row.companyId]?.[s.name];
+        // null quando sem responsável; array com 1 ou mais emails quando há atribuição
+        return [s.name, emails && emails.length > 0 ? emails : null];
+      }),
     );
     return { ...row, ...sectorData };
   });
