@@ -135,7 +135,14 @@ const companyWritableFields = [
   "active",
 ];
 
-const companyInclude = { responsibles: { include: { sector: true, user: true } } };
+const companyInclude = {
+  responsibles: {
+    include: {
+      sector: true,
+      user: { select: { id: true, name: true, email: true, active: true, sectorId: true } },
+    },
+  },
+};
 
 
 const responsibleUserRefSchema = z
