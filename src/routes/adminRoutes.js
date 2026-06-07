@@ -163,19 +163,50 @@ adminRoutes.put("/sectors/:id/activate", async (req, res) => {
   res.json(updated);
 });
 
-// Simple audit viewer (ADMIN only - this router is mounted behind ADMIN role)
+// Calcula diff campo a campo entre dois snapshots JSON
+function computeFieldDiff(before, after) {
+  if (!before && !after) return [];
+  const allKeys = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
+  const changes = [];
+  for (const campo of allKeys) {
+    const valorAnterior = before?.[campo] ?? null;
+    const novoValor     = after?.[campo]  ?? null;
+    if (JSON.stringify(valorAnterior) !== JSON.stringify(novoValor)) {
+      changes.push({ campo, valorAnterior, novoValor });
+    }
+  }
+  return changes;
+}
+
+// GET /api/admin/audit
+// Retorna: nomeEmpresa, usuarioResponsavel, data, hora, camposAlterados, valorAnterior, novoValor
 adminRoutes.get("/audit", async (req, res) => {
-  const entity = (req.query.entity || "").toString().trim() || undefined;
-  const entityId = (req.query.entityId || "").toString().trim() || undefined;
-  const action = (req.query.action || "").toString().trim() || undefined;
-  const limit = Math.min(parseInt((req.query.limit || "50").toString(), 10) || 50, 200);
-  const offset = parseInt((req.query.offset || "0").toString(), 10) || 0;
+  const entity    = (req.query.entity    || "").toString().trim() || undefined;
+  const entityId  = (req.query.entityId  || "").toString().trim() || undefined;
+  const companyId = (req.query.companyId || "").toString().trim() || undefined;
+  const action    = (req.query.action    || "").toString().trim() || undefined;
+  const startDate = (req.query.startDate || "").toString().trim() || undefined;
+  const endDate   = (req.query.endDate   || "").toString().trim() || undefined;
+  const limit  = Math.min(parseInt((req.query.limit  || "50").toString(), 10) || 50, 200);
+  const offset = Math.max(parseInt((req.query.offset || "0").toString(),  10) || 0,   0);
+
+  const parsedStart = startDate ? new Date(startDate) : undefined;
+  const parsedEnd   = endDate   ? new Date(endDate)   : undefined;
 
   const rows = await prisma.auditLog.findMany({
     where: {
-      ...(entity ? { entity } : {}),
-      ...(entityId ? { entityId } : {}),
-      ...(action ? { action: { contains: action } } : {}),
+      // companyId é atalho para entity=Company + entityId=companyId
+      ...(companyId ? { entity: "Company", entityId: companyId } : {
+        ...(entity   ? { entity }   : {}),
+        ...(entityId ? { entityId } : {}),
+      }),
+      ...(action ? { action: { contains: action, mode: "insensitive" } } : {}),
+      ...(parsedStart || parsedEnd ? {
+        createdAt: {
+          ...(parsedStart ? { gte: parsedStart } : {}),
+          ...(parsedEnd   ? { lte: parsedEnd   } : {}),
+        },
+      } : {}),
     },
     include: { actor: { select: { id: true, name: true, email: true } } },
     orderBy: { createdAt: "desc" },
@@ -183,20 +214,50 @@ adminRoutes.get("/audit", async (req, res) => {
     skip: offset,
   });
 
+  // Resolve nome da empresa para logs de entidade Company (batch para evitar N+1)
+  const companyIds = [...new Set(
+    rows.filter((r) => r.entity === "Company" && r.entityId).map((r) => r.entityId),
+  )];
+  const companies = companyIds.length
+    ? await prisma.company.findMany({
+        where:  { id: { in: companyIds } },
+        select: { id: true, razaoSocial: true, nomeFantasia: true },
+      })
+    : [];
+  const companyMap = Object.fromEntries(companies.map((c) => [c.id, c]));
+
   res.json({
     limit,
     offset,
-    items: rows.map((r) => ({
-      id: r.id,
-      createdAt: r.createdAt,
-      actor: r.actor,
-      action: r.action,
-      entity: r.entity,
-      entityId: r.entityId,
-      ip: r.ip,
-      userAgent: r.userAgent,
-      beforeJson: r.beforeJson,
-      afterJson: r.afterJson,
-    })),
+    items: rows.map((r) => {
+      const compRecord = r.entity === "Company" ? companyMap[r.entityId] : null;
+      // Fallback para snapshot em caso de empresa excluída
+      const nomeEmpresa =
+        compRecord?.razaoSocial ??
+        compRecord?.nomeFantasia ??
+        r.afterJson?.razaoSocial  ??
+        r.beforeJson?.razaoSocial ??
+        null;
+
+      const iso  = r.createdAt.toISOString();
+      const data = iso.slice(0, 10);        // "YYYY-MM-DD"
+      const hora = iso.slice(11, 19);       // "HH:MM:SS"
+
+      return {
+        id: r.id,
+        data,
+        hora,
+        nomeEmpresa,
+        usuarioResponsavel: r.actor,
+        action:    r.action,
+        entity:    r.entity,
+        entityId:  r.entityId,
+        camposAlterados: computeFieldDiff(r.beforeJson, r.afterJson),
+        valorAnterior:   r.beforeJson,
+        novoValor:       r.afterJson,
+        ip:        r.ip,
+        userAgent: r.userAgent,
+      };
+    }),
   });
 });

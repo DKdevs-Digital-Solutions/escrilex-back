@@ -5,48 +5,133 @@ function buildV5Paths() {
     "/api/expectation-matrix/options": {
       get: {
         tags: ["Matriz de Expectativas"],
-        summary: "Metadados, colunas, opções e usuários da Matriz de Expectativas",
+        summary: "Metadados, colunas dinâmicas, opções e usuários da Matriz de Expectativas",
+        description: [
+          "Retorna as colunas da tabela, incluindo **colunas dinâmicas de responsável por setor**.",
+          "Cada setor ativo gera uma coluna com `type: 'sector-user'`, `key = sector.name` e `label = 'RESP. <NOME>'`.",
+          "O campo `setores` lista os setores ativos com id e name.",
+          "O campo `users` lista os usuários ativos para popular os selects.",
+        ].join(" "),
         security: authRequired,
-        responses: { 200: { description: "Opções retornadas" } },
+        responses: {
+          200: {
+            description: "Opções retornadas",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    columns: {
+                      type: "array",
+                      description: "Colunas estáticas + colunas dinâmicas de setor (type: sector-user)",
+                      items: {
+                        type: "object",
+                        properties: {
+                          key:      { type: "string" },
+                          label:    { type: "string" },
+                          type:     { type: "string", enum: ["automatic", "text", "textarea", "select", "date", "sector-user"] },
+                          sectorId: { type: "string", description: "Presente apenas em colunas sector-user" },
+                        },
+                      },
+                    },
+                    options:  { type: "object", description: "Opções de cada campo select" },
+                    users:    { type: "array",  description: "Usuários ativos para selects de responsável" },
+                    setores:  { type: "array",  description: "Setores ativos", items: { type: "object", properties: { id: { type: "string" }, name: { type: "string" } } } },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     },
     "/api/expectation-matrix": {
       get: {
         tags: ["Matriz de Expectativas"],
         summary: "Listar a Matriz de Expectativas em formato de tabela",
+        description: [
+          "Cada item inclui as colunas estáticas da empresa + colunas dinâmicas de setor.",
+          "As colunas dinâmicas têm como **chave o nome do setor** e **valor o e-mail do responsável** (ou null se não atribuído).",
+          "Exemplo: `{ ..., 'Fiscal': 'fulano@email.com', 'Contábil': null }`.",
+        ].join(" "),
         security: authRequired,
         parameters: [
-          { name: "search", in: "query", schema: { type: "string" } },
-          { name: "status", in: "query", schema: { type: "string" } },
-          { name: "grupo", in: "query", schema: { type: "string" } },
-          { name: "tributacao", in: "query", schema: { type: "string" } },
-          { name: "ramo", in: "query", schema: { type: "string" } },
-          { name: "perfil", in: "query", schema: { type: "string" } },
-          { name: "limit", in: "query", schema: { type: "integer" } },
-          { name: "offset", in: "query", schema: { type: "integer" } },
+          { name: "search",    in: "query", schema: { type: "string"  } },
+          { name: "status",    in: "query", schema: { type: "string"  } },
+          { name: "grupo",     in: "query", schema: { type: "string"  } },
+          { name: "tributacao",in: "query", schema: { type: "string"  } },
+          { name: "ramo",      in: "query", schema: { type: "string"  } },
+          { name: "perfil",    in: "query", schema: { type: "string"  } },
+          { name: "active",    in: "query", schema: { type: "boolean" }, description: "Filtrar por situação ativa/inativa" },
+          { name: "limit",     in: "query", schema: { type: "integer", default: 100, maximum: 500 } },
+          { name: "offset",    in: "query", schema: { type: "integer", default: 0 } },
         ],
-        responses: { 200: { description: "Linhas retornadas" } },
+        responses: {
+          200: {
+            description: "Linhas retornadas",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    total:  { type: "integer" },
+                    limit:  { type: "integer" },
+                    offset: { type: "integer" },
+                    items:  { type: "array", items: { type: "object", description: "Campos fixos + chaves dinâmicas por nome do setor com e-mail do responsável" } },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     },
     "/api/expectation-matrix/{companyId}": {
       get: {
         tags: ["Matriz de Expectativas"],
         summary: "Detalhar linha da Matriz de Expectativas por empresa",
+        description: "Retorna os dados fixos da empresa + colunas dinâmicas de setor (chave = nome do setor, valor = e-mail do responsável ou null).",
         security: authRequired,
         parameters: [{ name: "companyId", in: "path", required: true, schema: { type: "string" } }],
-        responses: { 200: { description: "Linha retornada" } },
+        responses: { 200: { description: "Linha retornada" }, 404: { description: "Empresa não encontrada" } },
       },
       put: {
         tags: ["Matriz de Expectativas"],
-        summary: "Editar dados base da Matriz de Expectativas",
+        summary: "Editar dados da Matriz de Expectativas",
+        description: [
+          "Atualiza campos da matriz e/ou responsáveis por setor.",
+          "Para atribuir responsáveis use o campo **`responsaveis`**: objeto com `{ 'Nome do Setor': 'userId' | null }`.",
+          "`null` remove a atribuição do setor.",
+          "Ao mudar o status para **'Bloqueado'** pela primeira vez, os campos `statusBloqueadoAt` e `statusBloqueadoByUserId` são registrados automaticamente.",
+          "Status **'Encerrado'** exige informar as datas de saída/fim de cobrança por departamento e o motivo da saída.",
+        ].join(" "),
         security: authRequired,
         parameters: [{ name: "companyId", in: "path", required: true, schema: { type: "string" } }],
-        requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } },
-        responses: { 200: { description: "Linha atualizada" } },
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  status:      { type: "string", enum: ["Em Implantação", "Pendente de Documentação", "Ativo", "Sem atividade", "Sem Movimento", "Baixada", "Em Saída", "Encerrado", "Bloqueado", "Doméstica"] },
+                  observacoes: { type: "string", nullable: true },
+                  responsaveis: {
+                    type: "object",
+                    description: "Atribuição de responsáveis por setor. Chave = nome do setor, valor = userId (string) ou null para remover.",
+                    example: { "Fiscal": "user-id-abc", "Contábil": "user-id-xyz", "RH": null },
+                    additionalProperties: { type: "string", nullable: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: { 200: { description: "Linha atualizada" }, 400: { description: "Validação falhou ou campos obrigatórios faltando para Encerrado" }, 404: { description: "Empresa não encontrada" } },
       },
       patch: {
         tags: ["Matriz de Expectativas"],
-        summary: "Editar parcialmente dados base da Matriz de Expectativas",
+        summary: "Editar parcialmente dados da Matriz de Expectativas (alias de PUT)",
         security: authRequired,
         parameters: [{ name: "companyId", in: "path", required: true, schema: { type: "string" } }],
         requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } },
@@ -162,9 +247,91 @@ function buildPaths() {
         security: authRequired,
         parameters: [
           { name: "startDate", in: "query", schema: { type: "string", format: "date-time" } },
-          { name: "endDate", in: "query", schema: { type: "string", format: "date-time" } },
+          { name: "endDate",   in: "query", schema: { type: "string", format: "date-time" } },
         ],
         responses: { 200: { description: "Resumo retornado" } },
+      },
+    },
+    "/api/dashboard/analytics": {
+      get: {
+        tags: ["Dashboard"],
+        summary: "Análise de permanência, motivos de saída e cancelamentos",
+        description: [
+          "Retorna três blocos de dados para o período informado:",
+          "**permanencia** — lista de empresas que saíram no período com `diasPermanencia` calculado (dataEntrada → dataSaida) e `mediaDias` geral.",
+          "**motivosSaida** — agrupamento por `motivoSaidaResumo` com `quantidade` e `percentual` de cada motivo.",
+          "**cancelamentos** — `quantidade` de saídas no período, `totalEmpresas` cadastradas até o fim do período e `percentual`.",
+          "Padrão do período: últimos 7 dias (igual ao /summary).",
+        ].join(" "),
+        security: authRequired,
+        parameters: [
+          { name: "startDate", in: "query", schema: { type: "string", format: "date-time" }, description: "Início do período (padrão: 7 dias atrás)" },
+          { name: "endDate",   in: "query", schema: { type: "string", format: "date-time" }, description: "Fim do período (padrão: hoje)" },
+        ],
+        responses: {
+          200: {
+            description: "Analytics retornados",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    period: {
+                      type: "object",
+                      properties: {
+                        startDate: { type: "string", format: "date-time" },
+                        endDate:   { type: "string", format: "date-time" },
+                      },
+                    },
+                    permanencia: {
+                      type: "object",
+                      properties: {
+                        mediaDias: { type: "integer", nullable: true, description: "Média de dias de permanência das empresas que saíram no período" },
+                        empresas: {
+                          type: "array",
+                          items: {
+                            type: "object",
+                            properties: {
+                              id:              { type: "string" },
+                              cnpj:            { type: "string" },
+                              razaoSocial:     { type: "string", nullable: true },
+                              nomeFantasia:    { type: "string", nullable: true },
+                              dataEntrada:     { type: "string", format: "date-time", nullable: true },
+                              dataSaida:       { type: "string", format: "date-time", nullable: true },
+                              diasPermanencia: { type: "integer", nullable: true },
+                              motivoSaida:     { type: "string", nullable: true },
+                              status:          { type: "string", nullable: true },
+                            },
+                          },
+                        },
+                      },
+                    },
+                    motivosSaida: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          motivo:     { type: "string" },
+                          quantidade: { type: "integer" },
+                          percentual: { type: "number", description: "% em relação ao total de saídas do período" },
+                        },
+                      },
+                    },
+                    cancelamentos: {
+                      type: "object",
+                      properties: {
+                        quantidade:    { type: "integer", description: "Empresas que saíram no período" },
+                        totalEmpresas: { type: "integer", description: "Total de empresas cadastradas até o fim do período" },
+                        percentual:    { type: "number",  description: "quantidade / totalEmpresas × 100" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          400: { description: "Parâmetro de data inválido" },
+        },
       },
     },
     "/api/admin/users": {
@@ -263,15 +430,79 @@ function buildPaths() {
       get: {
         tags: ["Admin - Auditoria"],
         summary: "Listar auditoria",
+        description: [
+          "Retorna todos os eventos de auditoria com campos enriquecidos.",
+          "Cada item inclui: **nomeEmpresa** (resolvido do banco), **usuarioResponsavel** (id/name/email),",
+          "**data** (YYYY-MM-DD), **hora** (HH:MM:SS), **camposAlterados** (diff campo a campo entre valorAnterior e novoValor).",
+          "Use `companyId` como atalho para filtrar todos os logs de uma empresa específica.",
+        ].join(" "),
         security: adminRequired,
         parameters: [
-          { name: "entity", in: "query", schema: { type: "string" } },
-          { name: "entityId", in: "query", schema: { type: "string" } },
-          { name: "action", in: "query", schema: { type: "string" } },
-          { name: "limit", in: "query", schema: { type: "integer" } },
-          { name: "offset", in: "query", schema: { type: "integer" } },
+          { name: "companyId", in: "query", schema: { type: "string" }, description: "Atalho: filtra todos os logs da empresa (entity=Company + entityId=companyId)" },
+          { name: "entity",    in: "query", schema: { type: "string" }, description: "Filtrar por entidade (ex: Company, User, Sector)" },
+          { name: "entityId",  in: "query", schema: { type: "string" }, description: "Filtrar por ID da entidade" },
+          { name: "action",    in: "query", schema: { type: "string" }, description: "Filtrar por ação (busca parcial, case-insensitive)" },
+          { name: "startDate", in: "query", schema: { type: "string", format: "date-time" }, description: "Início do período" },
+          { name: "endDate",   in: "query", schema: { type: "string", format: "date-time" }, description: "Fim do período" },
+          { name: "limit",     in: "query", schema: { type: "integer", default: 50, maximum: 200 } },
+          { name: "offset",    in: "query", schema: { type: "integer", default: 0 } },
         ],
-        responses: { 200: { description: "Eventos de auditoria" } },
+        responses: {
+          200: {
+            description: "Eventos de auditoria enriquecidos",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    limit:  { type: "integer" },
+                    offset: { type: "integer" },
+                    items: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          id:               { type: "string" },
+                          data:             { type: "string", example: "2026-06-07", description: "Data do evento (YYYY-MM-DD)" },
+                          hora:             { type: "string", example: "14:32:10",   description: "Hora do evento (HH:MM:SS)" },
+                          nomeEmpresa:      { type: "string", nullable: true, description: "Razão social da empresa (quando entity=Company)" },
+                          usuarioResponsavel: {
+                            type: "object",
+                            description: "Usuário que realizou a alteração",
+                            properties: {
+                              id:    { type: "string" },
+                              name:  { type: "string" },
+                              email: { type: "string" },
+                            },
+                          },
+                          action:    { type: "string" },
+                          entity:    { type: "string" },
+                          entityId:  { type: "string", nullable: true },
+                          camposAlterados: {
+                            type: "array",
+                            description: "Diff campo a campo entre valorAnterior e novoValor",
+                            items: {
+                              type: "object",
+                              properties: {
+                                campo:         { type: "string" },
+                                valorAnterior: { description: "Valor antes da alteração" },
+                                novoValor:     { description: "Valor após a alteração" },
+                              },
+                            },
+                          },
+                          valorAnterior: { description: "Snapshot completo antes da alteração (JSON)" },
+                          novoValor:     { description: "Snapshot completo após a alteração (JSON)" },
+                          ip:        { type: "string", nullable: true },
+                          userAgent: { type: "string", nullable: true },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     },
     "/api/admin/email-account": {
@@ -377,6 +608,7 @@ function buildPaths() {
       put: {
         tags: ["Empresas"],
         summary: "Editar empresa",
+        description: "Ao enviar `situacao: 'Bloqueado'` pela primeira vez, os campos `bloqueadoAt` (data/hora) e `bloqueadoPor` (userId) são registrados automaticamente.",
         security: authRequired,
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } },

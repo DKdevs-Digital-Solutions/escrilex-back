@@ -60,6 +60,8 @@ model Company {
   qtdeInicialFolha      Int?
   active        Boolean  @default(true)
   inactivatedAt DateTime?
+  bloqueadoAt   DateTime?
+  bloqueadoPor  String?
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

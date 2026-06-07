@@ -37,167 +37,154 @@ const MATRIX_OPTIONS = {
   clientContactAreas: ["Folha", "Fiscal", "Contábil", "Financeiro"],
 };
 
-const MATRIX_COLUMNS = [
-  { key: "codigo", label: "CÓDIGO", type: "automatic", source: "Company.cod" },
-  { key: "empresa", label: "EMPRESA", type: "text", source: "Company.razaoSocial" },
-  { key: "cnpjCpf", label: "CNPJ/CPF", type: "text", source: "Company.cnpj" },
-  { key: "grupo", label: "GRUPO", type: "text", source: "Company.grupo" },
-  { key: "matrizFilial", label: "MATRIZ/FILIAL", type: "select", optionsKey: "matrizFilial", source: "Company.filial" },
-  { key: "tributacao", label: "TRIBUTAÇÃO", type: "select", optionsKey: "tributacao", source: "Company.tributacao" },
-  { key: "observacoes", label: "OBSERVAÇÕES", type: "textarea", source: "CompanyExpectationMatrix.observacoes" },
-  { key: "ramo", label: "RAMO", type: "select", optionsKey: "ramo", source: "Company.ramo" },
-  { key: "perfilComercial", label: "PERFIL COMERCIAL", type: "select", optionsKey: "perfilComercial", source: "Company.perfil" },
-  { key: "reunioesFechamentos", label: "REUNIÕES FECHAMENTOS", type: "select", optionsKey: "reunioesFechamentos" },
-  { key: "consultoria", label: "CONSULTORIA", type: "select", optionsKey: "consultoria", source: "Company.consultoria" },
-  { key: "fechamentoContabil", label: "FECHAMENTO CONTÁBIL", type: "select", optionsKey: "fechamentoContabil" },
-  { key: "analiseCompliance", label: "ANÁLISE COMPLIANCE", type: "select", optionsKey: "analiseCompliance" },
-  { key: "cobrancaServExtras", label: "COBRANÇA SERV. EXTRAS", type: "select", optionsKey: "cobrancaServExtras" },
-  { key: "respFecRhUserId", label: "RESP. FEC. RH", type: "user" },
-  { key: "analistaLiderFiscalUserId", label: "ANALISTA LÍDER FISCAL", type: "user" },
-  { key: "respFecFiscalUserId", label: "RESP. FEC. FISCAL", type: "user" },
-  { key: "analistaLiderContabilUserId", label: "ANALISTA LÍDER CONTÁBIL", type: "user" },
-  { key: "respFecContabilUserId", label: "RESP. FEC. CONTÁBIL", type: "user" },
-  { key: "respComplianceUserId", label: "RESP. COMPLIANCE", type: "user" },
-  { key: "respQualidadeUserId", label: "RESP. QUALIDADE", type: "user" },
-  { key: "respAtendimentoUserId", label: "RESP. ATENDIMENTO", type: "user" },
-  { key: "complexidadeFiscal", label: "COMPLEXIDADE FISCAL", type: "select", optionsKey: "complexidade" },
-  { key: "complexidadeContabil", label: "COMPLEXIDADE CONTÁBIL", type: "select", optionsKey: "complexidade" },
-  { key: "status", label: "STATUS", type: "select", optionsKey: "status", source: "Company.situacao" },
-  { key: "entrada", label: "ENTRADA", type: "date", source: "Company.dataEntrada" },
-  { key: "saida", label: "SAÍDA", type: "date", source: "CompanyExpectationMatrix.dataSaida" },
+// Colunas estáticas da matriz.
+// As colunas de responsável por setor são geradas dinamicamente a partir da tabela Sector.
+const STATIC_MATRIX_COLUMNS = [
+  { key: "codigo",              label: "CÓDIGO",                  type: "automatic", source: "Company.cod" },
+  { key: "empresa",             label: "EMPRESA",                 type: "text",      source: "Company.razaoSocial" },
+  { key: "cnpjCpf",            label: "CNPJ/CPF",                type: "text",      source: "Company.cnpj" },
+  { key: "grupo",               label: "GRUPO",                   type: "text",      source: "Company.grupo" },
+  { key: "matrizFilial",        label: "MATRIZ/FILIAL",           type: "select",    optionsKey: "matrizFilial",        source: "Company.filial" },
+  { key: "tributacao",          label: "TRIBUTAÇÃO",              type: "select",    optionsKey: "tributacao",          source: "Company.tributacao" },
+  { key: "observacoes",         label: "OBSERVAÇÕES",             type: "textarea",  source: "CompanyExpectationMatrix.observacoes" },
+  { key: "ramo",                label: "RAMO",                    type: "select",    optionsKey: "ramo",                source: "Company.ramo" },
+  { key: "perfilComercial",     label: "PERFIL COMERCIAL",        type: "select",    optionsKey: "perfilComercial",     source: "Company.perfil" },
+  { key: "reunioesFechamentos", label: "REUNIÕES FECHAMENTOS",    type: "select",    optionsKey: "reunioesFechamentos" },
+  { key: "consultoria",         label: "CONSULTORIA",             type: "select",    optionsKey: "consultoria",         source: "Company.consultoria" },
+  { key: "fechamentoContabil",  label: "FECHAMENTO CONTÁBIL",     type: "select",    optionsKey: "fechamentoContabil" },
+  { key: "analiseCompliance",   label: "ANÁLISE COMPLIANCE",      type: "select",    optionsKey: "analiseCompliance" },
+  { key: "cobrancaServExtras",  label: "COBRANÇA SERV. EXTRAS",   type: "select",    optionsKey: "cobrancaServExtras" },
+  // >>> colunas dinâmicas de setor são injetadas aqui no GET /options <<<
+  { key: "complexidadeFiscal",  label: "COMPLEXIDADE FISCAL",     type: "select",    optionsKey: "complexidade" },
+  { key: "complexidadeContabil",label: "COMPLEXIDADE CONTÁBIL",   type: "select",    optionsKey: "complexidade" },
+  { key: "status",              label: "STATUS",                  type: "select",    optionsKey: "status",              source: "Company.situacao" },
+  { key: "entrada",             label: "ENTRADA",                 type: "date",      source: "Company.dataEntrada" },
+  { key: "saida",               label: "SAÍDA",                   type: "date",      source: "CompanyExpectationMatrix.dataSaida" },
 ];
 
+// Índice onde as colunas de setor serão inseridas (antes de complexidade)
+const SECTOR_COLUMNS_INSERT_INDEX = STATIC_MATRIX_COLUMNS.findIndex((c) => c.key === "complexidadeFiscal");
+
 const nullableString = z.preprocess((value) => (value === "" ? null : value), z.string().nullable().optional());
-const nullableDate = z.preprocess((value) => (value === "" || value === null ? null : value), z.coerce.date().nullable().optional());
-const nullableInt = z.preprocess((value) => {
+const nullableDate   = z.preprocess((value) => (value === "" || value === null ? null : value), z.coerce.date().nullable().optional());
+const nullableInt    = z.preprocess((value) => {
   if (value === "" || value === null || value === undefined) return value === undefined ? undefined : null;
   return value;
 }, z.coerce.number().int().nullable().optional());
-const nullableJson = z.preprocess((value) => (value === "" ? null : value), z.unknown().nullable().optional());
+const nullableJson   = z.preprocess((value) => (value === "" ? null : value), z.unknown().nullable().optional());
 
 const matrixSaveSchema = z.object({
-  codigo: nullableString,
-  cod: nullableString,
-  empresa: nullableString,
-  razaoSocial: nullableString,
-  cnpjCpf: nullableString,
-  cnpj: nullableString,
-  grupo: nullableString,
-  matrizFilial: nullableString,
-  filial: nullableString,
-  tributacao: nullableString,
-  ramo: nullableString,
-  perfilComercial: nullableString,
-  perfil: nullableString,
-  consultoria: nullableString,
-  status: nullableString,
-  situacao: nullableString,
-  entrada: nullableDate,
-  dataEntrada: nullableDate,
-  ie: nullableString,
-  ieAtual: nullableString,
-  motivoEntrada: nullableString,
-  motivoSaida: nullableString,
-  motivoSaidaResumo: nullableString,
-  observacoes: nullableString,
-  reunioesFechamentos: nullableString,
-  fechamentoContabil: nullableString,
-  analiseCompliance: nullableString,
-  cobrancaServExtras: nullableString,
-  respFecRhUserId: nullableString,
-  analistaLiderFiscalUserId: nullableString,
-  respFecFiscalUserId: nullableString,
-  analistaLiderContabilUserId: nullableString,
-  respFecContabilUserId: nullableString,
-  respComplianceUserId: nullableString,
-  respQualidadeUserId: nullableString,
-  respAtendimentoUserId: nullableString,
-  complexidadeFiscal: nullableString,
-  complexidadeContabil: nullableString,
-  quantidadeFolha: nullableInt,
-  saida: nullableDate,
-  dataSaida: nullableDate,
-  dataEntradaFiscal: nullableDate,
-  dataSaidaFiscal: nullableDate,
-  dataEntradaContabil: nullableDate,
-  dataSaidaContabil: nullableDate,
-  dataEntradaFolha: nullableDate,
-  dataSaidaFolha: nullableDate,
-  dataEntradaConsultoria: nullableDate,
-  dataSaidaConsultoria: nullableDate,
-  dataInicioCobrancaFiscal: nullableDate,
-  dataFimCobrancaFiscal: nullableDate,
-  dataInicioCobrancaContabil: nullableDate,
-  dataFimCobrancaContabil: nullableDate,
-  dataInicioCobrancaFolha: nullableDate,
-  dataFimCobrancaFolha: nullableDate,
-  dataInicioCobrancaConsultoria: nullableDate,
-  dataFimCobrancaConsultoria: nullableDate,
-  acessos: nullableJson,
+  codigo:                       nullableString,
+  cod:                          nullableString,
+  empresa:                      nullableString,
+  razaoSocial:                  nullableString,
+  cnpjCpf:                      nullableString,
+  cnpj:                         nullableString,
+  grupo:                        nullableString,
+  matrizFilial:                 nullableString,
+  filial:                       nullableString,
+  tributacao:                   nullableString,
+  ramo:                         nullableString,
+  perfilComercial:              nullableString,
+  perfil:                       nullableString,
+  consultoria:                  nullableString,
+  status:                       nullableString,
+  situacao:                     nullableString,
+  entrada:                      nullableDate,
+  dataEntrada:                  nullableDate,
+  ie:                           nullableString,
+  ieAtual:                      nullableString,
+  motivoEntrada:                nullableString,
+  motivoSaida:                  nullableString,
+  motivoSaidaResumo:            nullableString,
+  observacoes:                  nullableString,
+  reunioesFechamentos:          nullableString,
+  fechamentoContabil:           nullableString,
+  analiseCompliance:            nullableString,
+  cobrancaServExtras:           nullableString,
+  complexidadeFiscal:           nullableString,
+  complexidadeContabil:         nullableString,
+  quantidadeFolha:              nullableInt,
+  saida:                        nullableDate,
+  dataSaida:                    nullableDate,
+  dataEntradaFiscal:            nullableDate,
+  dataSaidaFiscal:              nullableDate,
+  dataEntradaContabil:          nullableDate,
+  dataSaidaContabil:            nullableDate,
+  dataEntradaFolha:             nullableDate,
+  dataSaidaFolha:               nullableDate,
+  dataEntradaConsultoria:       nullableDate,
+  dataSaidaConsultoria:         nullableDate,
+  dataInicioCobrancaFiscal:     nullableDate,
+  dataFimCobrancaFiscal:        nullableDate,
+  dataInicioCobrancaContabil:   nullableDate,
+  dataFimCobrancaContabil:      nullableDate,
+  dataInicioCobrancaFolha:      nullableDate,
+  dataFimCobrancaFolha:         nullableDate,
+  dataInicioCobrancaConsultoria:nullableDate,
+  dataFimCobrancaConsultoria:   nullableDate,
+  acessos:                      nullableJson,
+  // responsaveis: { "Nome do Setor": "userId" | null }
+  // null remove a atribuição; userId atribui o responsável ao setor
+  responsaveis: z.record(z.string(), z.string().nullable()).optional(),
 }).passthrough();
 
 const companyFieldMap = {
-  codigo: "cod",
-  cod: "cod",
-  empresa: "razaoSocial",
-  razaoSocial: "razaoSocial",
-  cnpjCpf: "cnpj",
-  cnpj: "cnpj",
-  grupo: "grupo",
-  matrizFilial: "filial",
-  filial: "filial",
-  tributacao: "tributacao",
-  ramo: "ramo",
-  perfilComercial: "perfil",
-  perfil: "perfil",
-  consultoria: "consultoria",
-  status: "situacao",
-  situacao: "situacao",
-  entrada: "dataEntrada",
-  dataEntrada: "dataEntrada",
-  ie: "ieAtual",
-  ieAtual: "ieAtual",
-  motivoEntrada: "motivoEntrada",
-  motivoSaida: "motivoSaidaResumo",
+  codigo:            "cod",
+  cod:               "cod",
+  empresa:           "razaoSocial",
+  razaoSocial:       "razaoSocial",
+  cnpjCpf:           "cnpj",
+  cnpj:              "cnpj",
+  grupo:             "grupo",
+  matrizFilial:      "filial",
+  filial:            "filial",
+  tributacao:        "tributacao",
+  ramo:              "ramo",
+  perfilComercial:   "perfil",
+  perfil:            "perfil",
+  consultoria:       "consultoria",
+  status:            "situacao",
+  situacao:          "situacao",
+  entrada:           "dataEntrada",
+  dataEntrada:       "dataEntrada",
+  ie:                "ieAtual",
+  ieAtual:           "ieAtual",
+  motivoEntrada:     "motivoEntrada",
+  motivoSaida:       "motivoSaidaResumo",
   motivoSaidaResumo: "motivoSaidaResumo",
 };
 
+// Campos da tabela CompanyExpectationMatrix.
+// Os campos de responsável por setor foram removidos — agora vivem em CompanySectorResponsible.
 const matrixFieldMap = {
-  observacoes: "observacoes",
-  reunioesFechamentos: "reunioesFechamentos",
-  fechamentoContabil: "fechamentoContabil",
-  analiseCompliance: "analiseCompliance",
-  cobrancaServExtras: "cobrancaServExtras",
-  respFecRhUserId: "respFecRhUserId",
-  analistaLiderFiscalUserId: "analistaLiderFiscalUserId",
-  respFecFiscalUserId: "respFecFiscalUserId",
-  analistaLiderContabilUserId: "analistaLiderContabilUserId",
-  respFecContabilUserId: "respFecContabilUserId",
-  respComplianceUserId: "respComplianceUserId",
-  respQualidadeUserId: "respQualidadeUserId",
-  respAtendimentoUserId: "respAtendimentoUserId",
-  complexidadeFiscal: "complexidadeFiscal",
-  complexidadeContabil: "complexidadeContabil",
-  quantidadeFolha: "quantidadeFolha",
-  saida: "dataSaida",
-  dataSaida: "dataSaida",
-  dataEntradaFiscal: "dataEntradaFiscal",
-  dataSaidaFiscal: "dataSaidaFiscal",
-  dataEntradaContabil: "dataEntradaContabil",
-  dataSaidaContabil: "dataSaidaContabil",
-  dataEntradaFolha: "dataEntradaFolha",
-  dataSaidaFolha: "dataSaidaFolha",
-  dataEntradaConsultoria: "dataEntradaConsultoria",
-  dataSaidaConsultoria: "dataSaidaConsultoria",
-  dataInicioCobrancaFiscal: "dataInicioCobrancaFiscal",
-  dataFimCobrancaFiscal: "dataFimCobrancaFiscal",
-  dataInicioCobrancaContabil: "dataInicioCobrancaContabil",
-  dataFimCobrancaContabil: "dataFimCobrancaContabil",
-  dataInicioCobrancaFolha: "dataInicioCobrancaFolha",
-  dataFimCobrancaFolha: "dataFimCobrancaFolha",
-  dataInicioCobrancaConsultoria: "dataInicioCobrancaConsultoria",
-  dataFimCobrancaConsultoria: "dataFimCobrancaConsultoria",
-  acessos: "acessos",
+  observacoes:                  "observacoes",
+  reunioesFechamentos:          "reunioesFechamentos",
+  fechamentoContabil:           "fechamentoContabil",
+  analiseCompliance:            "analiseCompliance",
+  cobrancaServExtras:           "cobrancaServExtras",
+  complexidadeFiscal:           "complexidadeFiscal",
+  complexidadeContabil:         "complexidadeContabil",
+  quantidadeFolha:              "quantidadeFolha",
+  saida:                        "dataSaida",
+  dataSaida:                    "dataSaida",
+  dataEntradaFiscal:            "dataEntradaFiscal",
+  dataSaidaFiscal:              "dataSaidaFiscal",
+  dataEntradaContabil:          "dataEntradaContabil",
+  dataSaidaContabil:            "dataSaidaContabil",
+  dataEntradaFolha:             "dataEntradaFolha",
+  dataSaidaFolha:               "dataSaidaFolha",
+  dataEntradaConsultoria:       "dataEntradaConsultoria",
+  dataSaidaConsultoria:         "dataSaidaConsultoria",
+  dataInicioCobrancaFiscal:     "dataInicioCobrancaFiscal",
+  dataFimCobrancaFiscal:        "dataFimCobrancaFiscal",
+  dataInicioCobrancaContabil:   "dataInicioCobrancaContabil",
+  dataFimCobrancaContabil:      "dataFimCobrancaContabil",
+  dataInicioCobrancaFolha:      "dataInicioCobrancaFolha",
+  dataFimCobrancaFolha:         "dataFimCobrancaFolha",
+  dataInicioCobrancaConsultoria:"dataInicioCobrancaConsultoria",
+  dataFimCobrancaConsultoria:   "dataFimCobrancaConsultoria",
+  acessos:                      "acessos",
 };
 
 function isFullAccess(user) {
@@ -206,8 +193,8 @@ function isFullAccess(user) {
 }
 
 function parseLimitOffset(query) {
-  const limit = Math.min(Math.max(parseInt(String(query.limit || "100"), 10) || 100, 1), 500);
-  const offset = Math.max(parseInt(String(query.offset || "0"), 10) || 0, 0);
+  const limit  = Math.min(Math.max(parseInt(String(query.limit  || "100"), 10) || 100, 1), 500);
+  const offset = Math.max(parseInt(String(query.offset || "0"),  10) || 0, 0);
   return { limit, offset };
 }
 
@@ -221,17 +208,9 @@ function addWhere(clauses, params, sql, value) {
   clauses.push(sql.replace("?", `$${params.length}`));
 }
 
-function buildAccessWhere(req, alias = "c") {
-  if (isFullAccess(req.user)) return { sql: "", params: [] };
-  return {
-    sql: ` AND EXISTS (SELECT 1 FROM "CompanySectorResponsible" csr_access WHERE csr_access."companyId" = ${alias}."id" AND csr_access."userId" = $ACCESS_USER_ID$)`,
-    params: [req.user.id],
-  };
-}
-
 function buildListWhere(req) {
   const clauses = ["1=1"];
-  const params = [];
+  const params  = [];
 
   const search = String(req.query.search || "").trim();
   if (search) {
@@ -246,23 +225,23 @@ function buildListWhere(req) {
     )`);
   }
 
-  const status = String(req.query.status || "").trim();
-  if (status) addWhere(clauses, params, `COALESCE(c."situacao", '') = ?`, status);
+  const status    = String(req.query.status    || "").trim();
+  if (status)    addWhere(clauses, params, `COALESCE(c."situacao", '') = ?`,       status);
 
-  const grupo = String(req.query.grupo || "").trim();
-  if (grupo) addWhere(clauses, params, `COALESCE(c."grupo", '') ILIKE ?`, `%${grupo}%`);
+  const grupo     = String(req.query.grupo     || "").trim();
+  if (grupo)     addWhere(clauses, params, `COALESCE(c."grupo", '') ILIKE ?`,      `%${grupo}%`);
 
   const tributacao = String(req.query.tributacao || "").trim();
-  if (tributacao) addWhere(clauses, params, `COALESCE(c."tributacao", '') = ?`, tributacao);
+  if (tributacao) addWhere(clauses, params, `COALESCE(c."tributacao", '') = ?`,    tributacao);
 
-  const ramo = String(req.query.ramo || "").trim();
-  if (ramo) addWhere(clauses, params, `COALESCE(c."ramo", '') = ?`, ramo);
+  const ramo      = String(req.query.ramo      || "").trim();
+  if (ramo)      addWhere(clauses, params, `COALESCE(c."ramo", '') = ?`,           ramo);
 
-  const perfil = String(req.query.perfil || "").trim();
-  if (perfil) addWhere(clauses, params, `COALESCE(c."perfil", '') = ?`, perfil);
+  const perfil    = String(req.query.perfil    || "").trim();
+  if (perfil)    addWhere(clauses, params, `COALESCE(c."perfil", '') = ?`,         perfil);
 
   const onlyActive = String(req.query.active || "").trim().toLowerCase();
-  if (["true", "1", "sim", "yes"].includes(onlyActive)) clauses.push(`c."active" = true`);
+  if (["true",  "1", "sim", "yes"].includes(onlyActive)) clauses.push(`c."active" = true`);
   if (["false", "0", "nao", "não", "no"].includes(onlyActive)) clauses.push(`c."active" = false`);
 
   if (!isFullAccess(req.user)) {
@@ -273,45 +252,38 @@ function buildListWhere(req) {
   return { whereSql: clauses.join(" AND "), params };
 }
 
+// SQL base — sem colunas fixas de responsável por setor (agora vindas de CompanySectorResponsible)
 const matrixSelectSql = `
   SELECT
-    c."id" AS "companyId",
-    c."cod" AS "codigo",
-    c."razaoSocial" AS "empresa",
+    c."id"                    AS "companyId",
+    c."cod"                   AS "codigo",
+    c."razaoSocial"           AS "empresa",
     c."nomeFantasia",
-    c."cnpj" AS "cnpjCpf",
+    c."cnpj"                  AS "cnpjCpf",
     c."grupo",
-    c."filial" AS "matrizFilial",
+    c."filial"                AS "matrizFilial",
     c."tributacao",
-    c."ieAtual" AS "ie",
+    c."ieAtual"               AS "ie",
     c."ramo",
-    c."perfil" AS "perfilComercial",
+    c."perfil"                AS "perfilComercial",
     c."consultoria",
-    c."situacao" AS "status",
-    c."dataEntrada" AS "entrada",
+    c."situacao"              AS "status",
+    c."dataEntrada"           AS "entrada",
     c."motivoEntrada",
-    c."motivoSaidaResumo" AS "motivoSaida",
+    c."motivoSaidaResumo"     AS "motivoSaida",
     c."active",
     c."createdAt",
     c."updatedAt",
-    m."id" AS "matrixId",
+    m."id"                    AS "matrixId",
     m."observacoes",
     m."reunioesFechamentos",
     m."fechamentoContabil",
     m."analiseCompliance",
     m."cobrancaServExtras",
-    m."respFecRhUserId",
-    m."analistaLiderFiscalUserId",
-    m."respFecFiscalUserId",
-    m."analistaLiderContabilUserId",
-    m."respFecContabilUserId",
-    m."respComplianceUserId",
-    m."respQualidadeUserId",
-    m."respAtendimentoUserId",
     m."complexidadeFiscal",
     m."complexidadeContabil",
     m."quantidadeFolha",
-    m."dataSaida" AS "saida",
+    m."dataSaida"             AS "saida",
     m."dataEntradaFiscal",
     m."dataSaidaFiscal",
     m."dataEntradaContabil",
@@ -332,11 +304,95 @@ const matrixSelectSql = `
     m."statusBloqueadoByUserId",
     m."acessos",
     m."updatedByUserId",
-    m."createdAt" AS "matrixCreatedAt",
-    m."updatedAt" AS "matrixUpdatedAt"
+    m."createdAt"             AS "matrixCreatedAt",
+    m."updatedAt"             AS "matrixUpdatedAt"
   FROM "Company" c
   LEFT JOIN ${MATRIX_TABLE} m ON m."companyId" = c."id"
 `;
+
+// ─── Helpers dinâmicos de setor ─────────────────────────────────────────────
+
+/** Retorna todos os setores ativos ordenados por nome. */
+async function getActiveSectors() {
+  return prisma.sector.findMany({
+    where:   { active: true },
+    orderBy: { name: "asc" },
+    select:  { id: true, name: true },
+  });
+}
+
+/**
+ * Enriquece cada row com colunas dinâmicas de setor.
+ * Chave = sector.name  |  Valor = user.email do responsável atribuído (ou null).
+ */
+async function enrichRowsWithSectorResponsibles(rows, sectors) {
+  if (!rows.length || !sectors.length) return rows;
+
+  const companyIds = [...new Set(rows.map((r) => r.companyId))];
+  const sectorIds  = sectors.map((s) => s.id);
+
+  const responsibles = await prisma.companySectorResponsible.findMany({
+    where:  { companyId: { in: companyIds }, sectorId: { in: sectorIds } },
+    select: {
+      companyId: true,
+      sector: { select: { name: true } },
+      user:   { select: { email: true } },
+    },
+  });
+
+  // Indexa: companyId → sectorName → email
+  const byCompany = {};
+  for (const r of responsibles) {
+    if (!byCompany[r.companyId]) byCompany[r.companyId] = {};
+    byCompany[r.companyId][r.sector.name] = r.user.email;
+  }
+
+  return rows.map((row) => {
+    const sectorData = Object.fromEntries(
+      sectors.map((s) => [s.name, byCompany[row.companyId]?.[s.name] ?? null]),
+    );
+    return { ...row, ...sectorData };
+  });
+}
+
+/**
+ * Atualiza CompanySectorResponsible com base no objeto { sectorName: userId | null }.
+ * null → remove a atribuição do setor.
+ */
+async function updateSectorResponsibles(companyId, responsaveis, actorId, sectors) {
+  if (!responsaveis || typeof responsaveis !== "object") return;
+
+  const sectorByName = Object.fromEntries(sectors.map((s) => [s.name, s]));
+
+  for (const [sectorName, userId] of Object.entries(responsaveis)) {
+    const sector = sectorByName[sectorName];
+    if (!sector) continue;
+
+    if (!userId) {
+      await prisma.companySectorResponsible.deleteMany({
+        where: { companyId, sectorId: sector.id },
+      });
+      continue;
+    }
+
+    const existing = await prisma.companySectorResponsible.findUnique({
+      where: { companyId_sectorId: { companyId, sectorId: sector.id } },
+    });
+
+    if (existing) {
+      await prisma.companySectorResponsible.update({
+        where: { id: existing.id },
+        data:  { userId, assignedAt: new Date(), assignedBy: actorId },
+      });
+    } else {
+      await prisma.companySectorResponsible.create({
+        data: { companyId, sectorId: sector.id, userId, assignedBy: actorId },
+      });
+    }
+  }
+}
+
+// ─── Funções internas de acesso ─────────────────────────────────────────────
 
 async function getMatrixRow(companyId, req) {
   const params = [companyId];
@@ -350,35 +406,40 @@ async function getMatrixRow(companyId, req) {
     `${matrixSelectSql} WHERE c."id" = $1 ${accessSql} LIMIT 1`,
     ...params,
   );
-  return rows[0] || null;
+  if (!rows[0]) return null;
+
+  const sectors  = await getActiveSectors();
+  const enriched = await enrichRowsWithSectorResponsibles(rows, sectors);
+  return enriched[0];
 }
 
-async function sendBlockedNotification(row, actorEmail) {
+/**
+ * Notifica por e-mail todos os responsáveis de setores da empresa ao bloquear.
+ * Usa CompanySectorResponsible em vez de colunas fixas.
+ */
+async function sendBlockedNotification(companyId, empresa, cnpjCpf, actorEmail) {
   try {
-    const userIds = [
-      row.respFecRhUserId,
-      row.analistaLiderFiscalUserId,
-      row.respFecFiscalUserId,
-      row.analistaLiderContabilUserId,
-      row.respFecContabilUserId,
-      row.respComplianceUserId,
-      row.respQualidadeUserId,
-      row.respAtendimentoUserId,
-    ].filter(Boolean);
+    const responsibles = await prisma.companySectorResponsible.findMany({
+      where:   { companyId },
+      include: { user: { select: { email: true, active: true } } },
+    });
 
-    const users = userIds.length
-      ? await prisma.user.findMany({ where: { id: { in: [...new Set(userIds)] }, active: true }, select: { email: true } })
-      : [];
-
-    const emails = users.map((user) => user.email).filter(Boolean);
+    const emails = [
+      ...new Set(
+        responsibles
+          .map((r) => r.user)
+          .filter((u) => u.active && u.email)
+          .map((u) => u.email),
+      ),
+    ];
     if (emails.length === 0) return;
 
     await sendMail(
       emails.join(","),
-      `Empresa bloqueada: ${row.empresa || row.cnpjCpf || row.companyId}`,
+      `Empresa bloqueada: ${empresa || cnpjCpf || companyId}`,
       [
-        `A empresa ${row.empresa || "sem nome"} foi marcada como Bloqueada.`,
-        `CNPJ/CPF: ${row.cnpjCpf || "-"}`,
+        `A empresa ${empresa || "sem nome"} foi marcada como Bloqueada.`,
+        `CNPJ/CPF: ${cnpjCpf || "-"}`,
         `Usuário responsável pela alteração: ${actorEmail || "-"}`,
         `Data/hora: ${new Date().toISOString()}`,
       ].join("\n"),
@@ -392,7 +453,10 @@ function collectFields(data, map) {
   const out = new Map();
   for (const [inputName, columnName] of Object.entries(map)) {
     if (data[inputName] !== undefined && !out.has(columnName)) {
-      const value = inputName === "cnpj" || inputName === "cnpjCpf" ? normalizeDocument(data[inputName]) : data[inputName];
+      const value =
+        inputName === "cnpj" || inputName === "cnpjCpf"
+          ? normalizeDocument(data[inputName])
+          : data[inputName];
       out.set(columnName, value);
     }
   }
@@ -414,12 +478,17 @@ function requireClosureFieldsIfNeeded(data) {
     "dataFimCobrancaConsultoria",
     "motivoSaida",
   ];
-  const missing = required.filter((field) => data[field] === undefined || data[field] === null || data[field] === "");
+  const missing = required.filter(
+    (field) => data[field] === undefined || data[field] === null || data[field] === "",
+  );
   return missing.length ? missing : null;
 }
 
 async function ensureMatrixRow(tx, companyId, userId) {
-  const existing = await tx.$queryRawUnsafe(`SELECT "id" FROM ${MATRIX_TABLE} WHERE "companyId" = $1 LIMIT 1`, companyId);
+  const existing = await tx.$queryRawUnsafe(
+    `SELECT "id" FROM ${MATRIX_TABLE} WHERE "companyId" = $1 LIMIT 1`,
+    companyId,
+  );
   if (existing[0]) return existing[0].id;
 
   const id = randomUUID();
@@ -435,7 +504,7 @@ async function ensureMatrixRow(tx, companyId, userId) {
 async function updateFields(tx, tableName, idColumn, idValue, fields) {
   if (fields.size === 0) return;
   const assignments = [];
-  const values = [];
+  const values      = [];
   let i = 1;
   for (const [columnName, value] of fields.entries()) {
     assignments.push(`"${columnName}" = $${i++}`);
@@ -449,41 +518,88 @@ async function updateFields(tx, tableName, idColumn, idValue, fields) {
   );
 }
 
+// ─── Rotas ───────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/expectation-matrix/options
+ * Retorna: colunas (estáticas + dinâmicas por setor), opções de select e usuários ativos.
+ * As colunas de setor têm type "sector-user" e key = sector.name.
+ * O valor nos dados é o e-mail do responsável (não o userId).
+ */
 expectationMatrixRoutes.get("/options", async (_req, res) => {
-  const users = await prisma.user.findMany({
-    where: { active: true },
-    select: { id: true, name: true, email: true, sectorId: true, sector: { select: { id: true, name: true } } },
-    orderBy: { name: "asc" },
-  });
+  const [users, sectors] = await Promise.all([
+    prisma.user.findMany({
+      where:   { active: true },
+      select:  { id: true, name: true, email: true, sectorId: true, sector: { select: { id: true, name: true } } },
+      orderBy: { name: "asc" },
+    }),
+    getActiveSectors(),
+  ]);
 
-  res.json({ columns: MATRIX_COLUMNS, options: MATRIX_OPTIONS, users });
+  // Gera colunas dinâmicas: uma coluna por setor ativo
+  const sectorColumns = sectors.map((s) => ({
+    key:      s.name,
+    label:    `RESP. ${s.name.toUpperCase()}`,
+    type:     "sector-user",
+    sectorId: s.id,
+  }));
+
+  // Injeta as colunas de setor na posição original (antes de complexidade)
+  const columns = [
+    ...STATIC_MATRIX_COLUMNS.slice(0, SECTOR_COLUMNS_INSERT_INDEX),
+    ...sectorColumns,
+    ...STATIC_MATRIX_COLUMNS.slice(SECTOR_COLUMNS_INSERT_INDEX),
+  ];
+
+  res.json({ columns, options: MATRIX_OPTIONS, users, setores: sectors });
 });
 
+/**
+ * GET /api/expectation-matrix/
+ * Lista empresas com dados da matriz.
+ * Cada row inclui colunas dinâmicas com o e-mail do responsável por setor.
+ */
 expectationMatrixRoutes.get("/", async (req, res) => {
-  const { limit, offset } = parseLimitOffset(req.query);
-  const { whereSql, params } = buildListWhere(req);
+  const { limit, offset }      = parseLimitOffset(req.query);
+  const { whereSql, params }   = buildListWhere(req);
 
-  const rows = await prisma.$queryRawUnsafe(
-    `${matrixSelectSql} WHERE ${whereSql} ORDER BY COALESCE(c."cod", c."razaoSocial", c."cnpj") ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-    ...params,
-    limit,
-    offset,
-  );
+  const [rows, countRows, sectors] = await Promise.all([
+    prisma.$queryRawUnsafe(
+      `${matrixSelectSql} WHERE ${whereSql} ORDER BY COALESCE(c."cod", c."razaoSocial", c."cnpj") ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      ...params,
+      limit,
+      offset,
+    ),
+    prisma.$queryRawUnsafe(
+      `SELECT COUNT(*)::int AS total FROM "Company" c LEFT JOIN ${MATRIX_TABLE} m ON m."companyId" = c."id" WHERE ${whereSql}`,
+      ...params,
+    ),
+    getActiveSectors(),
+  ]);
 
-  const countRows = await prisma.$queryRawUnsafe(
-    `SELECT COUNT(*)::int AS total FROM "Company" c LEFT JOIN ${MATRIX_TABLE} m ON m."companyId" = c."id" WHERE ${whereSql}`,
-    ...params,
-  );
+  const enrichedRows = await enrichRowsWithSectorResponsibles(rows, sectors);
 
-  res.json({ total: Number(countRows[0]?.total || 0), limit, offset, items: rows });
+  res.json({ total: Number(countRows[0]?.total || 0), limit, offset, items: enrichedRows });
 });
 
+/**
+ * GET /api/expectation-matrix/:companyId
+ * Retorna a linha da matriz de uma empresa específica.
+ */
 expectationMatrixRoutes.get("/:companyId", async (req, res) => {
   const row = await getMatrixRow(req.params.companyId, req);
   if (!row) return res.status(404).json({ error: "Empresa não encontrada" });
   res.json(row);
 });
 
+/**
+ * PUT /api/expectation-matrix/:companyId
+ * Atualiza campos da matriz e/ou responsáveis por setor.
+ *
+ * Para atribuir responsáveis por setor inclua no body:
+ *   "responsaveis": { "Nome do Setor": "userId", "Outro Setor": null }
+ * null remove a atribuição do setor.
+ */
 expectationMatrixRoutes.put("/:companyId", async (req, res) => {
   const body = matrixSaveSchema.safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
@@ -494,45 +610,57 @@ expectationMatrixRoutes.put("/:companyId", async (req, res) => {
   const missingClosureFields = requireClosureFieldsIfNeeded(body.data);
   if (missingClosureFields) {
     return res.status(400).json({
-      error: "Para status Encerrado, informe as datas de saída/fim de cobrança por departamento e o motivo da saída.",
+      error:   "Para status Encerrado, informe as datas de saída/fim de cobrança por departamento e o motivo da saída.",
       missing: missingClosureFields,
     });
   }
 
   const companyFields = collectFields(body.data, companyFieldMap);
-  const matrixFields = collectFields(body.data, matrixFieldMap);
+  const matrixFields  = collectFields(body.data, matrixFieldMap);
 
   const newStatus = body.data.status ?? body.data.situacao;
   if (newStatus !== undefined) {
-    companyFields.set("situacao", newStatus);
+    companyFields.set("situacao",    newStatus);
     companyFields.set("dataSituacao", new Date());
+
     if (["Encerrado", "Baixada"].includes(newStatus)) {
-      companyFields.set("active", false);
+      companyFields.set("active",       false);
       companyFields.set("inactivatedAt", new Date());
-    } else if (["Ativo", "Bloqueado", "Em Implantação", "Pendente de Documentação", "Sem atividade", "Sem Movimento", "Em Saída", "Doméstica"].includes(newStatus)) {
-      companyFields.set("active", true);
+    } else if ([
+      "Ativo", "Bloqueado", "Em Implantação", "Pendente de Documentação",
+      "Sem atividade", "Sem Movimento", "Em Saída", "Doméstica",
+    ].includes(newStatus)) {
+      companyFields.set("active",       true);
       companyFields.set("inactivatedAt", null);
     }
 
+    // Auto-registro do bloqueio (data + hora + usuário)
     if (newStatus === "Bloqueado" && !before.statusBloqueadoAt) {
-      matrixFields.set("statusBloqueadoAt", new Date());
+      matrixFields.set("statusBloqueadoAt",      new Date());
       matrixFields.set("statusBloqueadoByUserId", req.user.id);
     }
   }
 
   matrixFields.set("updatedByUserId", req.user.id);
 
+  const sectors = await getActiveSectors();
+
   await prisma.$transaction(async (tx) => {
     await ensureMatrixRow(tx, req.params.companyId, req.user.id);
-    await updateFields(tx, '"Company"', "id", req.params.companyId, companyFields);
+    await updateFields(tx, '"Company"',  "id",        req.params.companyId, companyFields);
     await updateFields(tx, MATRIX_TABLE, "companyId", req.params.companyId, matrixFields);
   });
+
+  // Atualiza responsáveis por setor via CompanySectorResponsible
+  if (body.data.responsaveis) {
+    await updateSectorResponsibles(req.params.companyId, body.data.responsaveis, req.user.id, sectors);
+  }
 
   const after = await getMatrixRow(req.params.companyId, req);
   await audit(req, "EXPECTATION_MATRIX_UPDATE", "Company", req.params.companyId, before, after);
 
   if ((body.data.status ?? body.data.situacao) === "Bloqueado") {
-    await sendBlockedNotification(after, req.user.email);
+    await sendBlockedNotification(req.params.companyId, after.empresa, after.cnpjCpf, req.user?.email);
   }
 
   res.json(after);

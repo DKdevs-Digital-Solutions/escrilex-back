@@ -324,6 +324,14 @@ companyRoutes.put("/:id", async (req, res) => {
 
   const updateData = buildCompanyWriteData(body.data);
 
+  // Ao mudar situacao para "Bloqueado" registra automaticamente data, hora e usuário responsável
+  const prevSituacao = (before.situacao ?? "").trim().toUpperCase();
+  const newSituacao  = (updateData.situacao ?? "").trim().toUpperCase();
+  if (newSituacao === "BLOQUEADO" && prevSituacao !== "BLOQUEADO") {
+    updateData.bloqueadoAt  = new Date();
+    updateData.bloqueadoPor = req.user?.id ?? null;
+  }
+
   const updated = await prisma.company.update({
     where: { id: req.params.id },
     data: updateData,
@@ -348,12 +356,21 @@ companyRoutes.patch("/:id/status", async (req, res) => {
   const status = body.data.status ?? body.data.situacao;
   const active = body.data.active ?? (status ? !isInactiveBusinessStatus(status) : before.active);
 
+  // Ao definir status como "Bloqueado" registra automaticamente data, hora e usuário responsável
+  const prevSituacaoPatch = (before.situacao ?? "").trim().toUpperCase();
+  const newStatusNorm     = (status ?? "").trim().toUpperCase();
+  const bloqueadoFields   =
+    newStatusNorm === "BLOQUEADO" && prevSituacaoPatch !== "BLOQUEADO" && !before.bloqueadoAt
+      ? { bloqueadoAt: new Date(), bloqueadoPor: req.user?.id ?? null }
+      : {};
+
   const updated = await prisma.company.update({
     where: { id: req.params.id },
     data: {
       active,
       inactivatedAt: active ? null : new Date(),
       ...(status ? { situacao: status, dataSituacao: new Date() } : {}),
+      ...bloqueadoFields,
     },
   });
 

@@ -319,3 +319,112 @@ dashboardRoutes.get("/details", async (req, res) => {
 
   res.json({ type, value: value || null, period: { startDate, endDate }, limit, offset, items: rows });
 });
+
+// ─── GET /api/dashboard/analytics ───────────────────────────────────────────
+// Retorna para o período selecionado:
+//   permanencia  → lista de empresas com diasPermanencia calculado + média geral
+//   motivosSaida → agrupamento por motivo de saída com quantidade e percentual
+//   cancelamentos → quantidade, total de empresas e percentual de cancelamentos
+dashboardRoutes.get("/analytics", async (req, res) => {
+  const period = parsePeriod(req);
+  if (period.error) return res.status(400).json({ error: period.error });
+  const { startDate, endDate } = period;
+
+  // Critério de saída: mesma lógica de /details?type=exits
+  const exitWhere = `
+    COALESCE(c."inactivatedAt", m."dataSaida", c."dataSituacao") BETWEEN $1 AND $2
+    AND (c."active" = false OR c."situacao" IN ('Baixada', 'Encerrado', 'Em Saída'))
+  `;
+
+  const [exitedRows, motivosRaw, totalCancelados, totalCadastrados] = await Promise.all([
+    // Permanência por empresa
+    prisma.$queryRawUnsafe(
+      `SELECT
+         c."id",
+         c."razaoSocial",
+         c."nomeFantasia",
+         c."cnpj",
+         c."dataEntrada",
+         COALESCE(c."inactivatedAt", m."dataSaida", c."dataSituacao") AS "dataSaida",
+         c."motivoSaidaResumo" AS "motivoSaida",
+         c."situacao" AS "status"
+       FROM "Company" c
+       LEFT JOIN "CompanyExpectationMatrix" m ON m."companyId" = c."id"
+       WHERE ${exitWhere}
+       ORDER BY COALESCE(c."inactivatedAt", m."dataSaida", c."dataSituacao") DESC`,
+      startDate,
+      endDate,
+    ),
+    // Agrupamento de motivos de saída
+    prisma.$queryRawUnsafe(
+      `SELECT
+         COALESCE(NULLIF(TRIM(c."motivoSaidaResumo"), ''), '(não informado)') AS "motivo",
+         COUNT(*)::int AS "quantidade"
+       FROM "Company" c
+       LEFT JOIN "CompanyExpectationMatrix" m ON m."companyId" = c."id"
+       WHERE ${exitWhere}
+       GROUP BY 1
+       ORDER BY "quantidade" DESC`,
+      startDate,
+      endDate,
+    ),
+    // Total de cancelamentos no período
+    countScalar(
+      `SELECT COUNT(*)::int AS total
+       FROM "Company" c
+       LEFT JOIN "CompanyExpectationMatrix" m ON m."companyId" = c."id"
+       WHERE ${exitWhere}`,
+      startDate,
+      endDate,
+    ),
+    // Total de empresas cadastradas até o fim do período (denominador do %)
+    countScalar(`SELECT COUNT(*)::int AS total FROM "Company" WHERE "dataCadastro" <= $1`, endDate),
+  ]);
+
+  const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+  const empresas = exitedRows.map((c) => {
+    const diasPermanencia =
+      c.dataEntrada && c.dataSaida
+        ? Math.round((new Date(c.dataSaida).getTime() - new Date(c.dataEntrada).getTime()) / MS_PER_DAY)
+        : null;
+    return {
+      id: c.id,
+      cnpj: c.cnpj,
+      razaoSocial: c.razaoSocial,
+      nomeFantasia: c.nomeFantasia,
+      dataEntrada: c.dataEntrada,
+      dataSaida: c.dataSaida,
+      diasPermanencia,
+      motivoSaida: c.motivoSaida,
+      status: c.status,
+    };
+  });
+
+  const empresasComDias = empresas.filter((e) => e.diasPermanencia !== null);
+  const mediaDias =
+    empresasComDias.length > 0
+      ? Math.round(empresasComDias.reduce((sum, e) => sum + e.diasPermanencia, 0) / empresasComDias.length)
+      : null;
+
+  const totalMotivos = motivosRaw.reduce((sum, m) => sum + Number(m.quantidade || 0), 0);
+  const motivosSaida = motivosRaw.map((m) => ({
+    motivo: m.motivo,
+    quantidade: Number(m.quantidade || 0),
+    percentual: totalMotivos > 0 ? Math.round((Number(m.quantidade) / totalMotivos) * 1000) / 10 : 0,
+  }));
+
+  const percentualCancelamentos =
+    totalCadastrados > 0 ? Math.round((totalCancelados / totalCadastrados) * 1000) / 10 : 0;
+
+  res.json({
+    period: { startDate, endDate },
+    permanencia: { mediaDias, empresas },
+    motivosSaida,
+    cancelamentos: {
+      quantidade: totalCancelados,
+      totalEmpresas: totalCadastrados,
+      percentual: percentualCancelamentos,
+    },
+  });
+});
