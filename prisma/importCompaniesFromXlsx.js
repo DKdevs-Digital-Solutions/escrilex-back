@@ -14,6 +14,7 @@
  *   node prisma/importCompaniesFromXlsx.js "C:\\caminho\\planilha.xlsx"
  *   node prisma/importCompaniesFromXlsx.js "...planilha.xlsx" --dry
  */
+import "dotenv/config"; // carrega DATABASE_URL (e demais vars) do arquivo .env
 import { randomUUID } from "crypto";
 import xlsx from "xlsx";
 import { PrismaClient } from "@prisma/client";
@@ -144,7 +145,9 @@ async function main() {
   console.log(`[import] Lendo: ${file}`);
   console.log(`[import] Aba: ${SHEET_NAME}${dry ? "  (DRY-RUN)" : ""}`);
 
-  const wb = xlsx.readFile(file, { cellDates: true });
+  // cellDates:false -> datas vêm como serial do Excel e são convertidas por toDate()
+  // em UTC (meia-noite), evitando deslocamento de fuso ao gravar.
+  const wb = xlsx.readFile(file, { cellDates: false });
   const ws = wb.Sheets[SHEET_NAME];
   if (!ws) throw new Error(`Aba "${SHEET_NAME}" não encontrada. Abas: ${wb.SheetNames.join(", ")}`);
 
