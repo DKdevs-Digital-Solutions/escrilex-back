@@ -9,7 +9,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "seed": "node prisma/seed.js",
-    "import:template": "node prisma/importTemplateFromXlsx.js"
+    "import:template": "node prisma/importTemplateFromXlsx.js",
+    "import:companies": "node prisma/importCompaniesFromXlsx.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

@@ -4,7 +4,7 @@ import { sendMail } from "./email.js";
 
 export async function scanAndNotifyOverdue() {
   const now = new Date();
-  const overdue = await prisma.checklistItemRun.findMany({
+  const overdue = await prisma.processItemRun.findMany({
     where: { status: "PENDENTE", dueDate: { lt: now }, overdueNotifiedAt: null },
     select: {
       id: true,
@@ -35,7 +35,7 @@ export async function scanAndNotifyOverdue() {
 
     await sendMail(responsible.user.email, subject, text);
 
-    await prisma.checklistItemRun.update({
+    await prisma.processItemRun.update({
       where: { id: item.id },
       data: { overdueNotifiedAt: new Date() },
     });

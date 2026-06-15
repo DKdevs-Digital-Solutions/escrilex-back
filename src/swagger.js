@@ -632,16 +632,16 @@ function buildPaths() {
         responses: { 200: { description: "Status alterado" } },
       },
     },
-    "/api/companies/{id}/checklists": {
+    "/api/companies/{id}/process": {
       get: {
         tags: ["Empresas"],
-        summary: "Listar checklists da empresa",
+        summary: "Listar processos da empresa",
         security: authRequired,
         parameters: [
           { name: "id", in: "path", required: true, schema: { type: "string" } },
           { name: "type", in: "query", schema: { type: "string", enum: ["ENTRADA", "SAIDA"] } },
         ],
-        responses: { 200: { description: "Checklists da empresa" } },
+        responses: { 200: { description: "Processos da empresa" } },
       },
     },
     "/api/companies/{id}/responsibles": {
@@ -849,28 +849,28 @@ function buildPaths() {
         responses: { 200: { description: "Item removido" } },
       },
     },
-    "/api/checklists/run/{runId}": {
+    "/api/process/run/{runId}": {
       get: {
-        tags: ["Checklists"],
-        summary: "Detalhar execução do checklist",
+        tags: ["Process"],
+        summary: "Detalhar execução do processo",
         security: authRequired,
         parameters: [{ name: "runId", in: "path", required: true, schema: { type: "string" } }],
         responses: { 200: { description: "Execução retornada" } },
       },
     },
-    "/api/checklists/start": {
+    "/api/process/start": {
       post: {
-        tags: ["Checklists"],
-        summary: "Iniciar checklist",
+        tags: ["Process"],
+        summary: "Iniciar processo",
         security: authRequired,
         requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["companyId", "type"], properties: { companyId: { type: "string" }, templateId: { type: "string" }, type: { type: "string", enum: ["ENTRADA", "SAIDA"] } } } } } },
-        responses: { 201: { description: "Checklist iniciado" } },
+        responses: { 201: { description: "Processo iniciado" } },
       },
     },
-    "/api/checklists/item/{itemRunId}": {
+    "/api/process/item/{itemRunId}": {
       patch: {
-        tags: ["Checklists"],
-        summary: "Atualizar item do checklist",
+        tags: ["Process"],
+        summary: "Atualizar item do processo",
         security: authRequired,
         parameters: [{ name: "itemRunId", in: "path", required: true, schema: { type: "string" } }],
         requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { status: { type: "string", enum: ["PENDENTE", "EM_ANDAMENTO", "CONCLUIDO", "NA", "FEITO"] }, observation: { type: "string", nullable: true } } } } } },
@@ -886,7 +886,7 @@ export function buildOpenApiSpec() {
     info: {
       title: "Escrilex Back API",
       version: "1.0.0",
-      description: "Documentação das chamadas disponíveis do backend, incluindo dashboard, empresas, checklists, templates, integração e configuração única de e-mail.",
+      description: "Documentação das chamadas disponíveis do backend, incluindo dashboard, empresas, process, templates, integração e configuração única de e-mail.",
     },
     servers: [{ url: "https://escrilex-back.onrender.com" }],
     components: {

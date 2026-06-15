@@ -5,7 +5,7 @@ import { authRequired, requireRoles, RoleName } from "./auth.js";
 import { authRoutes } from "./routes/authRoutes.js";
 import { adminRoutes } from "./routes/adminRoutes.js";
 import { companyRoutes } from "./routes/companyRoutes.js";
-import { checklistRoutes } from "./routes/checklistRoutes.js";
+import { processRoutes } from "./routes/processRoutes.js";
 import { templateRoutes } from "./routes/templateRoutes.js";
 import { integrationRoutes } from "./routes/integrationRoutes.js";
 import { lookupRoutes } from "./routes/lookupRoutes.js";
@@ -43,7 +43,7 @@ app.use("/api/expectation-matrix", expectationMatrixRoutes);
 app.use("/api/companies", companyRoutes);
 app.use("/api/integrations", integrationRoutes);
 app.use("/api/templates", requireRoles(RoleName.ADMIN, RoleName.GESTOR_EMPRESA), templateRoutes);
-app.use("/api/checklists", checklistRoutes);
+app.use("/api/process", processRoutes);
 
 const interval = setInterval(async () => {
   try {

@@ -398,12 +398,12 @@ companyRoutes.delete("/:id", async (req, res) => {
   res.json(updated);
 });
 
-companyRoutes.get("/:id/checklists", async (req, res) => {
+companyRoutes.get("/:id/process", async (req, res) => {
   const type = String(req.query.type || "").trim();
   const companyId = req.params.id;
   if (type && !["ENTRADA", "SAIDA"].includes(type)) return res.status(400).json({ error: "invalid type" });
 
-  const runs = await prisma.checklistRun.findMany({
+  const runs = await prisma.processRun.findMany({
     where: {
       companyId,
       ...(type ? { type } : {}),

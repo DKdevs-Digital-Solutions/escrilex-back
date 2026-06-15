@@ -1,6 +1,6 @@
 import fs from "fs";
 import xlsx from "xlsx";
-import { PrismaClient, ChecklistType } from "@prisma/client";
+import { PrismaClient, ProcessType } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -120,11 +120,11 @@ async function main() {
   const blocks = extractBlocksFromSheet(worksheet);
 
   for (const type of ["ENTRADA", "SAIDA"]) {
-    const checklistType = type === "ENTRADA" ? ChecklistType.ENTRADA : ChecklistType.SAIDA;
-    const template = await prisma.checklistTemplate.create({
+    const processType = type === "ENTRADA" ? ProcessType.ENTRADA : ProcessType.SAIDA;
+    const template = await prisma.processTemplate.create({
       data: {
-        type: checklistType,
-        name: type === "ENTRADA" ? "Checklist de Entrada (importado)" : "Checklist de Saída (importado)",
+        type: processType,
+        name: type === "ENTRADA" ? "Processo de Entrada (importado)" : "Processo de Saída (importado)",
         version: 1,
         active: true,
       },
@@ -143,7 +143,7 @@ async function main() {
 
     for (let sectionIndex = 0; sectionIndex < sectionOrder.length; sectionIndex += 1) {
       const sectionName = sectionOrder[sectionIndex];
-      const section = await prisma.checklistTemplateSection.create({
+      const section = await prisma.processTemplateSection.create({
         data: {
           templateId: template.id,
           name: sectionName,
@@ -163,7 +163,7 @@ async function main() {
         const item = items[itemIndex];
         const isFirstAction = item.code.toUpperCase() === "AÇÃO 01";
 
-        await prisma.checklistTemplateItem.create({
+        await prisma.processTemplateItem.create({
           data: {
             sectionId: section.id,
             code: item.code,

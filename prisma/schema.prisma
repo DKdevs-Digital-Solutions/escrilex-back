@@ -7,7 +7,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum ChecklistType {
+enum ProcessType {
   ENTRADA
   SAIDA
 }
@@ -66,7 +66,7 @@ model Company {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  checklistRuns      ChecklistRun[]
+  processRuns      ProcessRun[]
   responsibles       CompanySectorResponsible[]
   responsibleHistory CompanySectorResponsibleHistory[]
   partners           CompanyPartner[]
@@ -100,7 +100,7 @@ model Sector {
   updatedAt DateTime @updatedAt
 
   users              User[]
-  templateItems      ChecklistTemplateItem[]         @relation("TemplateItemSector")
+  templateItems      ProcessTemplateItem[]         @relation("TemplateItemSector")
   responsibles       CompanySectorResponsible[]
   responsibleHistory CompanySectorResponsibleHistory[]
 
@@ -146,33 +146,33 @@ model UserRole {
   @@map("UserRole")
 }
 
-model ChecklistTemplate {
+model ProcessTemplate {
   id        String        @id @default(cuid())
-  type      ChecklistType
+  type      ProcessType
   name      String
   version   Int           @default(1)
   active    Boolean       @default(true)
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
-  sections ChecklistTemplateSection[]
+  sections ProcessTemplateSection[]
 
-  @@map("ChecklistTemplate")
+  @@map("ProcessTemplate")
 }
 
-model ChecklistTemplateSection {
+model ProcessTemplateSection {
   id         String @id @default(cuid())
   templateId String
   name       String
   order      Int    @default(0)
 
-  template ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  items    ChecklistTemplateItem[]
+  template ProcessTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  items    ProcessTemplateItem[]
 
-  @@map("ChecklistTemplateSection")
+  @@map("ProcessTemplateSection")
 }
 
-model ChecklistTemplateItem {
+model ProcessTemplateItem {
   id                   String      @id @default(cuid())
   sectionId            String
   code                 String?
@@ -184,17 +184,17 @@ model ChecklistTemplateItem {
   dueRuleType          DueRuleType @default(OFFSET_DAYS)
   dueRuleParam         Int?
 
-  section ChecklistTemplateSection @relation(fields: [sectionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  section ProcessTemplateSection @relation(fields: [sectionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   sector  Sector?                  @relation("TemplateItemSector", fields: [sectorId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
-  @@map("ChecklistTemplateItem")
+  @@map("ProcessTemplateItem")
 }
 
-model ChecklistRun {
+model ProcessRun {
   id                      String        @id @default(cuid())
   companyId               String
   templateId              String?
-  type                    ChecklistType
+  type                    ProcessType
   createdBy               String
   anchorAt                DateTime?
   createdAt               DateTime      @default(now())
@@ -202,12 +202,12 @@ model ChecklistRun {
   snapshotTemplateVersion Int?
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  items   ChecklistItemRun[]
+  items   ProcessItemRun[]
 
-  @@map("ChecklistRun")
+  @@map("ProcessRun")
 }
 
-model ChecklistItemRun {
+model ProcessItemRun {
   id                         String      @id @default(cuid())
   runId                      String
   templateItemId             String?
@@ -227,10 +227,10 @@ model ChecklistItemRun {
   snapshotDueRuleType        DueRuleType?
   snapshotDueRuleParam       Int?
 
-  run ChecklistRun @relation(fields: [runId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  run ProcessRun @relation(fields: [runId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([runId])
-  @@map("ChecklistItemRun")
+  @@map("ProcessItemRun")
 }
 
 model CompanySectorResponsible {

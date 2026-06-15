@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../prisma.js";
 import { audit } from "../audit.js";
 
-const ChecklistTypeEnum = z.enum(["ENTRADA","SAIDA"]);
+const ProcessTypeEnum = z.enum(["ENTRADA","SAIDA"]);
 const DueRuleTypeEnum = z.enum(["OFFSET_DAYS","DAY_OF_NEXT_MONTH"]);
 
 
@@ -12,17 +12,17 @@ export const templateRoutes = Router();
 
 // List templates (lightweight)
 templateRoutes.get("/", async (_req, res) => {
-  const templates = await prisma.checklistTemplate.findMany({ orderBy: { createdAt: "desc" } });
+  const templates = await prisma.processTemplate.findMany({ orderBy: { createdAt: "desc" } });
   res.json(templates);
 });
 
 
 // Get default (active latest) template for a given type (includes sections + items)
 templateRoutes.get("/default/by-type/:type", async (req, res) => {
-  const parsed = ChecklistTypeEnum.safeParse(req.params.type);
+  const parsed = ProcessTypeEnum.safeParse(req.params.type);
   if (!parsed.success) return res.status(400).json({ error: "Tipo inválido" });
 
-  const t = await prisma.checklistTemplate.findFirst({
+  const t = await prisma.processTemplate.findFirst({
     where: { type: parsed.data, active: true },
     orderBy: [{ version: "desc" }, { createdAt: "desc" }],
     include: {
@@ -38,7 +38,7 @@ templateRoutes.get("/default/by-type/:type", async (req, res) => {
 
 // Get full template (sections + items)
 templateRoutes.get("/:id", async (req, res) => {
-  const t = await prisma.checklistTemplate.findUnique({
+  const t = await prisma.processTemplate.findUnique({
     where: { id: req.params.id },
     include: {
       sections: {
@@ -53,11 +53,11 @@ templateRoutes.get("/:id", async (req, res) => {
 
 // Create template
 templateRoutes.post("/", async (req, res) => {
-  const body = z.object({ type: ChecklistTypeEnum, name: z.string().min(1) }).safeParse(req.body);
+  const body = z.object({ type: ProcessTypeEnum, name: z.string().min(1) }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
-  const t = await prisma.checklistTemplate.create({ data: body.data });
-  await audit(req, "TEMPLATE_CREATE", "ChecklistTemplate", t.id, undefined, t);
+  const t = await prisma.processTemplate.create({ data: body.data });
+  await audit(req, "TEMPLATE_CREATE", "ProcessTemplate", t.id, undefined, t);
   res.status(201).json(t);
 });
 
@@ -72,11 +72,11 @@ templateRoutes.put("/:id", async (req, res) => {
     .safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
-  const before = await prisma.checklistTemplate.findUnique({ where: { id: req.params.id } });
+  const before = await prisma.processTemplate.findUnique({ where: { id: req.params.id } });
   if (!before) return res.status(404).json({ error: "Template não encontrado" });
 
-  const after = await prisma.checklistTemplate.update({ where: { id: req.params.id }, data: body.data });
-  await audit(req, "TEMPLATE_UPDATE", "ChecklistTemplate", after.id, before, after);
+  const after = await prisma.processTemplate.update({ where: { id: req.params.id }, data: body.data });
+  await audit(req, "TEMPLATE_UPDATE", "ProcessTemplate", after.id, before, after);
   res.json(after);
 });
 
@@ -86,10 +86,10 @@ templateRoutes.post("/:id/sections", async (req, res) => {
   const body = z.object({ name: z.string().min(1), order: z.number().int().optional() }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
-  const s = await prisma.checklistTemplateSection.create({
+  const s = await prisma.processTemplateSection.create({
     data: { templateId: req.params.id, name: body.data.name, order: body.data.order ?? 0 },
   });
-  await audit(req, "TEMPLATE_SECTION_CREATE", "ChecklistTemplateSection", s.id, undefined, s);
+  await audit(req, "TEMPLATE_SECTION_CREATE", "ProcessTemplateSection", s.id, undefined, s);
   res.status(201).json(s);
 });
 
@@ -97,25 +97,25 @@ templateRoutes.put("/sections/:sectionId", async (req, res) => {
   const body = z.object({ name: z.string().min(1).optional(), order: z.number().int().optional() }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
-  const before = await prisma.checklistTemplateSection.findUnique({ where: { id: req.params.sectionId } });
+  const before = await prisma.processTemplateSection.findUnique({ where: { id: req.params.sectionId } });
   if (!before) return res.status(404).json({ error: "Seção não encontrada" });
 
-  const after = await prisma.checklistTemplateSection.update({ where: { id: req.params.sectionId }, data: body.data });
-  await audit(req, "TEMPLATE_SECTION_UPDATE", "ChecklistTemplateSection", after.id, before, after);
+  const after = await prisma.processTemplateSection.update({ where: { id: req.params.sectionId }, data: body.data });
+  await audit(req, "TEMPLATE_SECTION_UPDATE", "ProcessTemplateSection", after.id, before, after);
   res.json(after);
 });
 
 templateRoutes.delete("/sections/:sectionId", async (req, res) => {
-  const before = await prisma.checklistTemplateSection.findUnique({
+  const before = await prisma.processTemplateSection.findUnique({
     where: { id: req.params.sectionId },
     include: { items: true },
   });
   if (!before) return res.status(404).json({ error: "Seção não encontrada" });
 
-  await prisma.checklistTemplateItem.deleteMany({ where: { sectionId: req.params.sectionId } });
-  await prisma.checklistTemplateSection.delete({ where: { id: req.params.sectionId } });
+  await prisma.processTemplateItem.deleteMany({ where: { sectionId: req.params.sectionId } });
+  await prisma.processTemplateSection.delete({ where: { id: req.params.sectionId } });
 
-  await audit(req, "TEMPLATE_SECTION_DELETE", "ChecklistTemplateSection", before.id, before, undefined);
+  await audit(req, "TEMPLATE_SECTION_DELETE", "ProcessTemplateSection", before.id, before, undefined);
   res.json({ ok: true });
 });
 
@@ -138,7 +138,7 @@ templateRoutes.post("/:id/items", async (req, res) => {
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
   // Basic guard: only allow editing templates to admin/gestor (already enforced at router level)
-  const it = await prisma.checklistTemplateItem.create({
+  const it = await prisma.processTemplateItem.create({
     data: {
       sectionId: body.data.sectionId,
       code: body.data.code ?? undefined,
@@ -152,7 +152,7 @@ templateRoutes.post("/:id/items", async (req, res) => {
     },
   });
 
-  await audit(req, "TEMPLATE_ITEM_CREATE", "ChecklistTemplateItem", it.id, undefined, it);
+  await audit(req, "TEMPLATE_ITEM_CREATE", "ProcessTemplateItem", it.id, undefined, it);
   res.status(201).json(it);
 });
 
@@ -160,10 +160,10 @@ templateRoutes.put("/items/:itemId", async (req, res) => {
   const body = itemSchema.partial().safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
 
-  const before = await prisma.checklistTemplateItem.findUnique({ where: { id: req.params.itemId } });
+  const before = await prisma.processTemplateItem.findUnique({ where: { id: req.params.itemId } });
   if (!before) return res.status(404).json({ error: "Item não encontrado" });
 
-  const after = await prisma.checklistTemplateItem.update({
+  const after = await prisma.processTemplateItem.update({
     where: { id: req.params.itemId },
     data: {
       sectionId: body.data.sectionId,
@@ -178,15 +178,15 @@ templateRoutes.put("/items/:itemId", async (req, res) => {
     },
   });
 
-  await audit(req, "TEMPLATE_ITEM_UPDATE", "ChecklistTemplateItem", after.id, before, after);
+  await audit(req, "TEMPLATE_ITEM_UPDATE", "ProcessTemplateItem", after.id, before, after);
   res.json(after);
 });
 
 templateRoutes.delete("/items/:itemId", async (req, res) => {
-  const before = await prisma.checklistTemplateItem.findUnique({ where: { id: req.params.itemId } });
+  const before = await prisma.processTemplateItem.findUnique({ where: { id: req.params.itemId } });
   if (!before) return res.status(404).json({ error: "Item não encontrado" });
 
-  await prisma.checklistTemplateItem.delete({ where: { id: req.params.itemId } });
-  await audit(req, "TEMPLATE_ITEM_DELETE", "ChecklistTemplateItem", before.id, before, undefined);
+  await prisma.processTemplateItem.delete({ where: { id: req.params.itemId } });
+  await audit(req, "TEMPLATE_ITEM_DELETE", "ProcessTemplateItem", before.id, before, undefined);
   res.json({ ok: true });
 });

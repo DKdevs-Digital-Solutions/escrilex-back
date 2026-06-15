@@ -336,25 +336,26 @@ async function enrichRowsWithSectorResponsibles(rows, sectors) {
     select: {
       companyId: true,
       sector: { select: { name: true } },
-      user:   { select: { email: true } },
+      user:   { select: { name: true, email: true } },
     },
   });
 
-  // Indexa: companyId → sectorName → [email, email, ...]
+  // Indexa: companyId → sectorName → [nome, nome, ...]
+  // Exibimos o nome do usuário (e-mail apenas como fallback quando o nome estiver vazio).
   const byCompany = {};
   for (const r of responsibles) {
     if (!byCompany[r.companyId]) byCompany[r.companyId] = {};
     const key = r.sector.name;
     if (!byCompany[r.companyId][key]) byCompany[r.companyId][key] = [];
-    byCompany[r.companyId][key].push(r.user.email);
+    byCompany[r.companyId][key].push(r.user.name || r.user.email);
   }
 
   return rows.map((row) => {
     const sectorData = Object.fromEntries(
       sectors.map((s) => {
-        const emails = byCompany[row.companyId]?.[s.name];
-        // null quando sem responsável; array com 1 ou mais emails quando há atribuição
-        return [s.name, emails && emails.length > 0 ? emails : null];
+        const names = byCompany[row.companyId]?.[s.name];
+        // null quando sem responsável; array com 1 ou mais nomes quando há atribuição
+        return [s.name, names && names.length > 0 ? names : null];
       }),
     );
     return { ...row, ...sectorData };
@@ -530,7 +531,7 @@ async function updateFields(tx, tableName, idColumn, idValue, fields) {
  * GET /api/expectation-matrix/options
  * Retorna: colunas (estáticas + dinâmicas por setor), opções de select e usuários ativos.
  * As colunas de setor têm type "sector-user" e key = sector.name.
- * O valor nos dados é o e-mail do responsável (não o userId).
+ * O valor nos dados é o nome do responsável (não o userId nem o e-mail).
  */
 expectationMatrixRoutes.get("/options", async (_req, res) => {
   const [users, sectors] = await Promise.all([
@@ -563,7 +564,7 @@ expectationMatrixRoutes.get("/options", async (_req, res) => {
 /**
  * GET /api/expectation-matrix/
  * Lista empresas com dados da matriz.
- * Cada row inclui colunas dinâmicas com o e-mail do responsável por setor.
+ * Cada row inclui colunas dinâmicas com o nome do responsável por setor.
  */
 expectationMatrixRoutes.get("/", async (req, res) => {
   const { limit, offset }      = parseLimitOffset(req.query);
