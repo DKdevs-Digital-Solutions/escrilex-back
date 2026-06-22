@@ -35,6 +35,11 @@ const MATRIX_OPTIONS = {
   complexidade: ["Baixa", "Média", "Alta", "Não se aplica"],
   status: STATUS_OPTIONS,
   clientContactAreas: ["Folha", "Fiscal", "Contábil", "Financeiro"],
+  uf: [
+    "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA",
+    "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN",
+    "RS", "RO", "RR", "SC", "SP", "SE", "TO",
+  ],
 };
 
 // Colunas estáticas da matriz.
@@ -44,6 +49,8 @@ const STATIC_MATRIX_COLUMNS = [
   { key: "empresa",             label: "EMPRESA",                 type: "text",      source: "Company.razaoSocial" },
   { key: "cnpjCpf",            label: "CNPJ/CPF",                type: "text",      source: "Company.cnpj" },
   { key: "grupo",               label: "GRUPO",                   type: "text",      source: "Company.grupo" },
+  { key: "municipio",           label: "MUNICÍPIO",               type: "text",      source: "Company.municipio" },
+  { key: "uf",                  label: "UF",                      type: "select",    optionsKey: "uf",                  source: "Company.uf" },
   { key: "matrizFilial",        label: "MATRIZ/FILIAL",           type: "select",    optionsKey: "matrizFilial",        source: "Company.filial" },
   { key: "tributacao",          label: "TRIBUTAÇÃO",              type: "select",    optionsKey: "tributacao",          source: "Company.tributacao" },
   { key: "observacoes",         label: "OBSERVAÇÕES",             type: "textarea",  source: "CompanyExpectationMatrix.observacoes" },
@@ -81,6 +88,8 @@ const matrixSaveSchema = z.object({
   cnpjCpf:                      nullableString,
   cnpj:                         nullableString,
   grupo:                        nullableString,
+  municipio:                    nullableString,
+  uf:                           nullableString,
   matrizFilial:                 nullableString,
   filial:                       nullableString,
   tributacao:                   nullableString,
@@ -137,6 +146,8 @@ const companyFieldMap = {
   cnpjCpf:           "cnpj",
   cnpj:              "cnpj",
   grupo:             "grupo",
+  municipio:         "municipio",
+  uf:                "uf",
   matrizFilial:      "filial",
   filial:            "filial",
   tributacao:        "tributacao",
@@ -222,6 +233,8 @@ function buildListWhere(req) {
       OR c."nomeFantasia" ILIKE ${i}
       OR c."cnpj" ILIKE ${i}
       OR c."grupo" ILIKE ${i}
+      OR c."municipio" ILIKE ${i}
+      OR c."uf" ILIKE ${i}
     )`);
   }
 
@@ -230,6 +243,12 @@ function buildListWhere(req) {
 
   const grupo     = String(req.query.grupo     || "").trim();
   if (grupo)     addWhere(clauses, params, `COALESCE(c."grupo", '') ILIKE ?`,      `%${grupo}%`);
+
+  const municipio = String(req.query.municipio || "").trim();
+  if (municipio) addWhere(clauses, params, `COALESCE(c."municipio", '') ILIKE ?`, `%${municipio}%`);
+
+  const uf        = String(req.query.uf        || "").trim();
+  if (uf)        addWhere(clauses, params, `COALESCE(c."uf", '') = ?`,            uf);
 
   const tributacao = String(req.query.tributacao || "").trim();
   if (tributacao) addWhere(clauses, params, `COALESCE(c."tributacao", '') = ?`,    tributacao);
@@ -261,6 +280,8 @@ const matrixSelectSql = `
     c."nomeFantasia",
     c."cnpj"                  AS "cnpjCpf",
     c."grupo",
+    c."municipio",
+    c."uf",
     c."filial"                AS "matrizFilial",
     c."tributacao",
     c."ieAtual"               AS "ie",

@@ -41,6 +41,8 @@ model Company {
   cod                   String?
   filial                String?
   grupo                 String?
+  municipio             String?
+  uf                    String?
   tributacao            String?
   ieAtual               String?
   dataTributacao        DateTime?
