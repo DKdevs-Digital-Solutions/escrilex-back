@@ -3,7 +3,7 @@ import { z } from "zod";
 import { randomUUID } from "crypto";
 import { prisma } from "../prisma.js";
 import { audit } from "../audit.js";
-import { sendMail } from "../email.js";
+import { sendTeamsNotification } from "../teams.js";
 
 export const expectationMatrixRoutes = Router();
 
@@ -462,18 +462,18 @@ async function sendBlockedNotification(companyId, empresa, cnpjCpf, actorEmail) 
     ];
     if (emails.length === 0) return;
 
-    await sendMail(
-      emails.join(","),
-      `Empresa bloqueada: ${empresa || cnpjCpf || companyId}`,
-      [
-        `A empresa ${empresa || "sem nome"} foi marcada como Bloqueada.`,
-        `CNPJ/CPF: ${cnpjCpf || "-"}`,
-        `Usuário responsável pela alteração: ${actorEmail || "-"}`,
-        `Data/hora: ${new Date().toISOString()}`,
-      ].join("\n"),
-    );
+    await sendTeamsNotification({
+      recipients: emails,
+      title: `Empresa bloqueada: ${empresa || cnpjCpf || companyId}`,
+      text: `A empresa ${empresa || "sem nome"} foi marcada como Bloqueada.`,
+      facts: [
+        { name: "CNPJ/CPF", value: cnpjCpf || "-" },
+        { name: "Responsável pela alteração", value: actorEmail || "-" },
+        { name: "Data/hora", value: new Date().toLocaleString("pt-BR") },
+      ],
+    });
   } catch (error) {
-    console.error("[BLOCKED_STATUS_EMAIL_ERROR]", error);
+    console.error("[BLOCKED_STATUS_NOTIFY_ERROR]", error);
   }
 }
 

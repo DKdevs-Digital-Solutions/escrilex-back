@@ -1,5 +1,5 @@
 import { prisma } from "./prisma.js";
-import { sendMail } from "./email.js";
+import { sendTeamsNotification } from "./teams.js";
 
 
 export async function scanAndNotifyOverdue() {
@@ -26,14 +26,20 @@ export async function scanAndNotifyOverdue() {
     });
     if (!responsible?.user?.email) continue;
 
-    const subject = `Prazo vencido - ${item.run.company.cnpj}`;
-    const text =
-      `Empresa: ${item.run.company.razaoSocial ?? item.run.company.cnpj}\n` +
-      `Setor: ${responsible.sector.name}\n` +
-      (item.snapshotItemDescription ? `Item: ${item.snapshotItemDescription}\n` : "") +
-      `Vencimento: ${item.dueDate?.toISOString()}\n`;
+    const empresa = item.run.company.razaoSocial ?? item.run.company.cnpj;
+    const facts = [
+      { name: "Empresa", value: empresa },
+      { name: "Setor", value: responsible.sector.name },
+    ];
+    if (item.snapshotItemDescription) facts.push({ name: "Item", value: item.snapshotItemDescription });
+    if (item.dueDate) facts.push({ name: "Vencimento", value: item.dueDate.toLocaleDateString("pt-BR") });
 
-    await sendMail(responsible.user.email, subject, text);
+    await sendTeamsNotification({
+      recipients: [responsible.user.email],
+      title: `Prazo vencido — ${item.run.company.cnpj}`,
+      text: `Há um item de processo com prazo vencido sob sua responsabilidade.`,
+      facts,
+    });
 
     await prisma.processItemRun.update({
       where: { id: item.id },

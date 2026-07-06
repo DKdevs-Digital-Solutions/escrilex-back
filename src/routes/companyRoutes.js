@@ -72,11 +72,46 @@ const companyBaseSchema = z.object({
   dataInicioCobranca: nullableDate,
   dataFimCobranca: nullableDate,
   motivoSaidaResumo: nullableString,
+  motivoSaida: nullableString,
   qtdeInicialFolha: nullableInt,
   qtdeFolha: nullableInt,
   qtde_folha: nullableInt,
   "QTDE Folha": nullableInt,
   active: optionalBoolean,
+
+  // Campos exibidos na tela de detalhe que são persistidos em CompanyExpectationMatrix.
+  observacoes: nullableString,
+  reunioesFechamentos: nullableString,
+  fechamentoContabil: nullableString,
+  analiseCompliance: nullableString,
+  cobrancaServExtras: nullableString,
+  complexidadeFiscal: nullableString,
+  complexidadeContabil: nullableString,
+  dataSaida: nullableDate,
+  dataEntradaFiscal: nullableDate,
+  dataSaidaFiscal: nullableDate,
+  dataEntradaContabil: nullableDate,
+  dataSaidaContabil: nullableDate,
+  dataEntradaFolha: nullableDate,
+  dataSaidaFolha: nullableDate,
+  dataEntradaConsultoria: nullableDate,
+  dataSaidaConsultoria: nullableDate,
+  dataInicioCobrancaFiscal: nullableDate,
+  dataFimCobrancaFiscal: nullableDate,
+  dataInicioCobrancaContabil: nullableDate,
+  dataFimCobrancaContabil: nullableDate,
+  dataInicioCobrancaFolha: nullableDate,
+  dataFimCobrancaFolha: nullableDate,
+  dataInicioCobrancaConsultoria: nullableDate,
+  dataFimCobrancaConsultoria: nullableDate,
+
+  // Acessos (armazenados como JSON na matriz).
+  prefeitura: nullableString,
+  prefeituraLogin: nullableString,
+  prefeituraSenha: nullableString,
+  sefaz: nullableString,
+  sefazLogin: nullableString,
+  sefazSenha: nullableString,
 });
 
 function pickDefined(data, fields) {
@@ -97,6 +132,11 @@ function buildCompanyWriteData(data) {
         break;
       }
     }
+  }
+
+  // O front do detalhe usa "motivoSaida"; a coluna da empresa é "motivoSaidaResumo".
+  if (normalized.motivoSaidaResumo === undefined && normalized.motivoSaida !== undefined) {
+    normalized.motivoSaidaResumo = normalized.motivoSaida;
   }
 
   const writeData = pickDefined(normalized, companyWritableFields);
@@ -147,6 +187,143 @@ const companyInclude = {
     },
   },
 };
+
+// ─── CompanyExpectationMatrix ────────────────────────────────────────────────
+// Vários campos exibidos no detalhe da empresa (observações, datas por setor,
+// acessos) vivem na tabela CompanyExpectationMatrix — acessada via SQL bruto,
+// pois não é um modelo Prisma. As funções abaixo permitem que o GET/PUT de
+// /companies/:id leiam e gravem esses campos junto com os da própria empresa.
+const MATRIX_TABLE = '"CompanyExpectationMatrix"';
+
+const matrixStringFields = [
+  "observacoes",
+  "reunioesFechamentos",
+  "fechamentoContabil",
+  "analiseCompliance",
+  "cobrancaServExtras",
+  "complexidadeFiscal",
+  "complexidadeContabil",
+];
+
+const matrixDateFields = [
+  "dataSaida",
+  "dataEntradaFiscal", "dataSaidaFiscal",
+  "dataEntradaContabil", "dataSaidaContabil",
+  "dataEntradaFolha", "dataSaidaFolha",
+  "dataEntradaConsultoria", "dataSaidaConsultoria",
+  "dataInicioCobrancaFiscal", "dataFimCobrancaFiscal",
+  "dataInicioCobrancaContabil", "dataFimCobrancaContabil",
+  "dataInicioCobrancaFolha", "dataFimCobrancaFolha",
+  "dataInicioCobrancaConsultoria", "dataFimCobrancaConsultoria",
+];
+
+const matrixFieldNames = [...matrixStringFields, ...matrixDateFields];
+
+// Campos "flat" de acesso guardados no JSON "acessos" da matriz.
+const acessoFields = ["prefeitura", "prefeituraLogin", "prefeituraSenha", "sefaz", "sefazLogin", "sefazSenha"];
+
+// Senhas não devem ser gravadas em texto claro no log de auditoria.
+const sensitiveAcessoFields = ["prefeituraSenha", "sefazSenha"];
+
+async function readMatrixRow(companyId) {
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT * FROM ${MATRIX_TABLE} WHERE "companyId" = $1 LIMIT 1`,
+    companyId,
+  );
+  return rows[0] ?? null;
+}
+
+// Mescla os campos da matriz (e aliases do detalhe) sobre o objeto da empresa.
+function mergeCompanyWithMatrix(company, matrixRow) {
+  if (!company) return company;
+  const acessos = matrixRow?.acessos && typeof matrixRow.acessos === "object" ? matrixRow.acessos : {};
+
+  const merged = {
+    ...company,
+    // Aliases usados pela tela de detalhe.
+    motivoSaida: company.motivoSaidaResumo ?? null,
+    qtdeFolha: company.qtdeInicialFolha ?? null,
+  };
+
+  for (const field of matrixFieldNames) {
+    merged[field] = matrixRow?.[field] ?? null;
+  }
+  for (const key of acessoFields) {
+    merged[key] = acessos?.[key] ?? null;
+  }
+
+  return merged;
+}
+
+// Snapshot para auditoria (sem senhas em texto claro).
+function sanitizeForAudit(merged) {
+  if (!merged) return merged;
+  const clone = { ...merged };
+  for (const key of sensitiveAcessoFields) {
+    if (clone[key] !== undefined && clone[key] !== null && clone[key] !== "") {
+      clone[key] = "••••••••";
+    }
+  }
+  return clone;
+}
+
+async function ensureMatrixRow(companyId, userId) {
+  const existing = await prisma.$queryRawUnsafe(
+    `SELECT "id" FROM ${MATRIX_TABLE} WHERE "companyId" = $1 LIMIT 1`,
+    companyId,
+  );
+  if (existing[0]) return existing[0].id;
+
+  const id = randomUUID();
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO ${MATRIX_TABLE} ("id", "companyId", "updatedByUserId", "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    id,
+    companyId,
+    userId,
+  );
+  return id;
+}
+
+// Monta o Map de colunas da matriz a gravar a partir do corpo da requisição.
+function buildMatrixWriteData(data, existingAcessos) {
+  const fields = new Map();
+
+  for (const field of matrixFieldNames) {
+    if (data[field] !== undefined) fields.set(field, data[field]);
+  }
+
+  const acessoUpdates = {};
+  let hasAcesso = false;
+  for (const key of acessoFields) {
+    if (data[key] !== undefined) {
+      acessoUpdates[key] = data[key];
+      hasAcesso = true;
+    }
+  }
+  if (hasAcesso) {
+    fields.set("acessos", { ...(existingAcessos || {}), ...acessoUpdates });
+  }
+
+  return fields;
+}
+
+async function writeMatrixFields(companyId, fields) {
+  if (fields.size === 0) return;
+  const assignments = [];
+  const values = [];
+  let i = 1;
+  for (const [column, value] of fields.entries()) {
+    assignments.push(`"${column}" = $${i++}`);
+    values.push(value);
+  }
+  assignments.push(`"updatedAt" = CURRENT_TIMESTAMP`);
+  values.push(companyId);
+  await prisma.$executeRawUnsafe(
+    `UPDATE ${MATRIX_TABLE} SET ${assignments.join(", ")} WHERE "companyId" = $${i}`,
+    ...values,
+  );
+}
 
 
 const responsibleUserRefSchema = z
@@ -222,6 +399,19 @@ function formatResponsibleRow(row) {
     sector: row.sector ? { id: row.sector.id, name: row.sector.name } : { id: row.sectorId, name: null },
     user: row.user ? { id: row.user.id, name: row.user.name, email: row.user.email } : { id: row.userId, name: null, email: null },
   };
+}
+
+// Snapshot amigável para auditoria: { "Nome do Setor": ["Fulano", "Ciclano"] }.
+// Mantém before/after comparáveis campo a campo (por setor) na tela de auditoria.
+function auditResponsiblesSnapshot(rows) {
+  const bySector = {};
+  for (const row of rows) {
+    const sectorName = row.sector?.name ?? row.sectorId;
+    const userName = row.user?.name ?? row.user?.email ?? row.userId;
+    if (!bySector[sectorName]) bySector[sectorName] = [];
+    bySector[sectorName].push(userName);
+  }
+  return bySector;
 }
 
 function groupResponsibleRows(rows) {
@@ -325,7 +515,9 @@ companyRoutes.get("/:id", async (req, res) => {
     include: companyInclude,
   });
   if (!company) return res.status(404).json({ error: "Not found" });
-  res.json(company);
+
+  const matrixRow = await readMatrixRow(company.id);
+  res.json(mergeCompanyWithMatrix(company, matrixRow));
 });
 
 companyRoutes.put("/:id", async (req, res) => {
@@ -334,6 +526,8 @@ companyRoutes.put("/:id", async (req, res) => {
 
   const before = await prisma.company.findUnique({ where: { id: req.params.id } });
   if (!before) return res.status(404).json({ error: "Not found" });
+
+  const beforeMatrix = await readMatrixRow(req.params.id);
 
   const updateData = buildCompanyWriteData(body.data);
 
@@ -351,8 +545,27 @@ companyRoutes.put("/:id", async (req, res) => {
     include: companyInclude,
   });
 
-  await audit(req, "COMPANY_UPDATE", "Company", updated.id, before, updated);
-  res.json(updated);
+  // Persiste os campos que vivem em CompanyExpectationMatrix (observações, datas
+  // por setor, acessos) quando presentes no corpo da requisição.
+  const matrixData = buildMatrixWriteData(body.data, beforeMatrix?.acessos);
+  if (matrixData.size > 0) {
+    await ensureMatrixRow(req.params.id, req.user?.id ?? null);
+    matrixData.set("updatedByUserId", req.user?.id ?? null);
+    await writeMatrixFields(req.params.id, matrixData);
+  }
+
+  const afterMatrix = await readMatrixRow(req.params.id);
+  const response = mergeCompanyWithMatrix(updated, afterMatrix);
+
+  await audit(
+    req,
+    "COMPANY_UPDATE",
+    "Company",
+    updated.id,
+    sanitizeForAudit(mergeCompanyWithMatrix(before, beforeMatrix)),
+    sanitizeForAudit(response),
+  );
+  res.json(response);
 });
 
 companyRoutes.patch("/:id/status", async (req, res) => {
@@ -589,10 +802,14 @@ companyRoutes.put("/:id/responsibles", async (req, res) => {
     orderBy: [{ assignedAt: "desc" }],
   });
 
-  await audit(req, "COMPANY_RESPONSIBLES_SET", "Company", company.id, before, {
-    input: body.data,
-    updated: updated.map(formatResponsibleRow),
-  });
+  await audit(
+    req,
+    "COMPANY_RESPONSIBLES_SET",
+    "Company",
+    company.id,
+    auditResponsiblesSnapshot(before),
+    auditResponsiblesSnapshot(updated),
+  );
 
   res.json({
     ok: true,

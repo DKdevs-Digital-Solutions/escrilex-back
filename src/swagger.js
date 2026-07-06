@@ -243,7 +243,7 @@ function buildPaths() {
       get: {
         tags: ["Dashboard"],
         summary: "Resumo do dashboard",
-        description: "Clientes novos são contados por dataCadastro. Clientes que saíram são clientes inativos contados por inactivatedAt.",
+        description: "Clientes novos são contados pela data de entrada (assinatura do contrato — dataEntrada, com fallback para dataCadastro). Clientes que saíram são clientes inativos contados por inactivatedAt.",
         security: authRequired,
         parameters: [
           { name: "startDate", in: "query", schema: { type: "string", format: "date-time" } },
@@ -505,16 +505,17 @@ function buildPaths() {
         },
       },
     },
-    "/api/admin/email-account": {
+    "/api/admin/notification-config": {
       get: {
-        tags: ["Admin - E-mail"],
-        summary: "Consultar conta única de e-mail",
+        tags: ["Admin - Notificações"],
+        summary: "Consultar configuração de notificações (Teams)",
         security: adminRequired,
-        responses: { 200: { description: "Conta cadastrada ou null" } },
+        responses: { 200: { description: "Configuração cadastrada ou null (clientSecret nunca é retornado)" } },
       },
       post: {
-        tags: ["Admin - E-mail"],
-        summary: "Cadastrar conta única de e-mail",
+        tags: ["Admin - Notificações"],
+        summary: "Salvar configuração de notificações (Teams)",
+        description: "Publica notificações em um canal via webhook (Power Automate/Workflows ou Incoming Webhook).",
         security: adminRequired,
         requestBody: {
           required: true,
@@ -522,35 +523,28 @@ function buildPaths() {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["host", "port", "username", "password", "fromEmail"],
                 properties: {
-                  host: { type: "string" },
-                  port: { type: "integer" },
-                  secure: { type: "boolean" },
-                  username: { type: "string" },
-                  password: { type: "string" },
-                  fromEmail: { type: "string", format: "email" },
-                  fromName: { type: "string" },
+                  webhookUrl: { type: "string" },
                   active: { type: "boolean" },
                 },
               },
             },
           },
         },
-        responses: { 201: { description: "Conta criada" }, 409: { description: "Já existe conta cadastrada" } },
+        responses: { 200: { description: "Configuração salva" }, 201: { description: "Configuração criada" } },
       },
       put: {
-        tags: ["Admin - E-mail"],
-        summary: "Editar conta única de e-mail",
+        tags: ["Admin - Notificações"],
+        summary: "Editar configuração de notificações (Teams)",
         security: adminRequired,
         requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } },
-        responses: { 200: { description: "Conta atualizada" } },
+        responses: { 200: { description: "Configuração atualizada" } },
       },
       delete: {
-        tags: ["Admin - E-mail"],
-        summary: "Excluir conta única de e-mail",
+        tags: ["Admin - Notificações"],
+        summary: "Excluir configuração de notificações",
         security: adminRequired,
-        responses: { 200: { description: "Conta removida" } },
+        responses: { 200: { description: "Configuração removida" } },
       },
     },
     "/api/lookup/sectors": {

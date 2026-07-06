@@ -89,12 +89,16 @@ dashboardRoutes.get("/summary", async (req, res) => {
     responsibleRows,
   ] = await Promise.all([
     countScalar(
-      `SELECT COUNT(*)::int AS total FROM "Company" WHERE "dataCadastro" BETWEEN $1 AND $2`,
+      // "Entrada" do cliente = data de assinatura do contrato (dataEntrada),
+      // com fallback para dataCadastro apenas quando a data de entrada não foi informada.
+      `SELECT COUNT(*)::int AS total FROM "Company" WHERE COALESCE("dataEntrada", "dataCadastro") BETWEEN $1 AND $2`,
       startDate,
       endDate,
     ),
     countScalar(
-      `SELECT COUNT(*)::int AS total FROM "Company" WHERE "dataCadastro" BETWEEN $1 AND $2`,
+      // "Entrada" do cliente = data de assinatura do contrato (dataEntrada),
+      // com fallback para dataCadastro apenas quando a data de entrada não foi informada.
+      `SELECT COUNT(*)::int AS total FROM "Company" WHERE COALESCE("dataEntrada", "dataCadastro") BETWEEN $1 AND $2`,
       previousStartDate,
       previousEndDate,
     ),
@@ -223,10 +227,11 @@ dashboardRoutes.get("/details", async (req, res) => {
 
   if (type === "entries") {
     rows = await prisma.$queryRawUnsafe(
+      // "Entrada" = data de assinatura do contrato (dataEntrada), com fallback para dataCadastro.
       `SELECT ${companyColumns}
        FROM "Company" c
-       WHERE c."dataCadastro" BETWEEN $1 AND $2
-       ORDER BY c."dataCadastro" DESC
+       WHERE COALESCE(c."dataEntrada", c."dataCadastro") BETWEEN $1 AND $2
+       ORDER BY COALESCE(c."dataEntrada", c."dataCadastro") DESC
        LIMIT $3 OFFSET $4`,
       startDate,
       endDate,

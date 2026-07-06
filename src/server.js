@@ -10,7 +10,7 @@ import { templateRoutes } from "./routes/templateRoutes.js";
 import { integrationRoutes } from "./routes/integrationRoutes.js";
 import { lookupRoutes } from "./routes/lookupRoutes.js";
 import { dashboardRoutes } from "./routes/dashboardRoutes.js";
-import { emailAccountRoutes } from "./routes/emailAccountRoutes.js";
+import { notificationConfigRoutes } from "./routes/notificationConfigRoutes.js";
 import { expectationMatrixRoutes } from "./routes/expectationMatrixRoutes.js";
 import { scanAndNotifyOverdue } from "./overdueScanner.js";
 import { registerSwagger } from "./swagger.js";
@@ -36,7 +36,7 @@ app.use("/api", authRequired);
 app.get("/api/auth/me", (req, res) => res.json(req.user));
 
 app.use("/api/admin", requireRoles(RoleName.ADMIN), adminRoutes);
-app.use("/api/admin", requireRoles(RoleName.ADMIN), emailAccountRoutes);
+app.use("/api/admin", requireRoles(RoleName.ADMIN), notificationConfigRoutes);
 app.use("/api/lookup", requireRoles(RoleName.ADMIN, RoleName.GESTOR_EMPRESA), lookupRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/expectation-matrix", expectationMatrixRoutes);

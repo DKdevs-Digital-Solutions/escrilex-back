@@ -163,12 +163,40 @@ adminRoutes.put("/sectors/:id/activate", async (req, res) => {
   res.json(updated);
 });
 
-// Calcula diff campo a campo entre dois snapshots JSON
+// Campos internos/técnicos que não devem aparecer como "alteração" na auditoria.
+const AUDIT_IGNORED_FIELDS = new Set([
+  "id",
+  "matrixId",
+  "companyId",
+  "createdAt",
+  "updatedAt",
+  "matrixCreatedAt",
+  "matrixUpdatedAt",
+  "updatedByUserId",
+  "statusBloqueadoByUserId",
+  // Payloads auxiliares de algumas auditorias (não são campos reais da entidade).
+  "input",
+  // Relações incluídas no snapshot que não representam alteração de campo.
+  "responsibles",
+  "responsibleHistory",
+  "partners",
+  "processRuns",
+  "actor",
+]);
+
+// Calcula diff campo a campo entre dois snapshots JSON.
+// Ignora campos técnicos e trata arrays/objetos aninhados de forma comparável.
 function computeFieldDiff(before, after) {
   if (!before && !after) return [];
+
+  // Snapshots em array (ex.: lista de responsáveis) não têm chaves de campo úteis;
+  // são melhor auditados pelo próprio payload da ação, então evitamos o diff bruto.
+  if (Array.isArray(before) || Array.isArray(after)) return [];
+
   const allKeys = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
   const changes = [];
   for (const campo of allKeys) {
+    if (AUDIT_IGNORED_FIELDS.has(campo)) continue;
     const valorAnterior = before?.[campo] ?? null;
     const novoValor     = after?.[campo]  ?? null;
     if (JSON.stringify(valorAnterior) !== JSON.stringify(novoValor)) {

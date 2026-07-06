@@ -285,19 +285,14 @@ model AuditLog {
   @@map("AuditLog")
 }
 
-model EmailAccountConfig {
+model NotificationConfig {
   id            String   @id @default(cuid())
   singletonKey  String   @unique @default("main")
-  host          String
-  port          Int      @default(587)
-  secure        Boolean  @default(false)
-  username      String
-  password      String
-  fromEmail     String
-  fromName      String?
+  // URL do webhook do Teams (Power Automate/Workflows ou Incoming Webhook).
+  webhookUrl    String?
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@map("EmailAccountConfig")
+  @@map("NotificationConfig")
 }
