@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../prisma.js";
 import { audit } from "../audit.js";
 import { sendTeamsNotification } from "../teams.js";
+import { responsibleEmails } from "../responsibles.js";
 
 const ProcessTypeEnum = z.enum(["ENTRADA","SAIDA"]);
 // We use CONCLUIDO as the canonical "done" status.
@@ -312,6 +313,8 @@ processRoutes.post("/start", async (req, res) => {
   sendTeamsNotification({
     eventKey: "process_started",
     title: "Processo iniciado",
+    actorEmail: req.user?.email,
+    recipients: await responsibleEmails(body.data.companyId),
     facts: [
       { name: "Empresa",  value: company?.razaoSocial ?? company?.nomeFantasia ?? "—" },
       { name: "CNPJ",     value: company?.cnpj ?? "—" },
@@ -399,6 +402,8 @@ processRoutes.patch("/item/:itemRunId", async (req, res) => {
         sendTeamsNotification({
           eventKey: "process_completed",
           title: "Processo concluído",
+          actorEmail: req.user?.email,
+          recipients: await responsibleEmails(run.companyId),
           facts: [
             { name: "Empresa", value: run.company?.razaoSocial ?? run.company?.nomeFantasia ?? "—" },
             { name: "CNPJ",    value: run.company?.cnpj ?? "—" },

@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { prisma } from "../prisma.js";
 import { audit } from "../audit.js";
 import { sendTeamsNotification } from "../teams.js";
+import { responsibleEmails } from "../responsibles.js";
 
 export const expectationMatrixRoutes = Router();
 
@@ -448,19 +449,7 @@ async function getMatrixRow(companyId, req) {
  */
 async function sendStatusChangeNotification(eventKey, title, row, actorEmail, novoStatus) {
   try {
-    const responsibles = await prisma.companySectorResponsible.findMany({
-      where:   { companyId: row.companyId },
-      include: { user: { select: { email: true, active: true } } },
-    });
-
-    const emails = [
-      ...new Set(
-        responsibles
-          .map((r) => r.user)
-          .filter((u) => u.active && u.email)
-          .map((u) => u.email),
-      ),
-    ];
+    const emails = await responsibleEmails(row.companyId);
 
     const facts = [
       { name: "Empresa", value: row.empresa || "—" },

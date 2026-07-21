@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { audit } from "../audit.js";
 import { sendTeamsNotification } from "../teams.js";
+import { responsibleEmails } from "../responsibles.js";
 
 export const companyRoutes = Router();
 
@@ -180,21 +181,9 @@ const companyWritableFields = [
   "active",
 ];
 
-// E-mails ativos dos responsáveis de setor — usados como destinatários/menções no Teams.
-async function responsibleEmails(companyId) {
-  const rows = await prisma.companySectorResponsible.findMany({
-    where:   { companyId },
-    include: { user: { select: { email: true, active: true } } },
-  });
-  return [
-    ...new Set(
-      rows.map((r) => r.user).filter((u) => u?.active && u.email).map((u) => u.email),
-    ),
-  ];
-}
-
-// Notifica bloqueio/desbloqueio. Fire-and-forget: falha aqui não derruba a request.
-async function notifyCompanyStatus({ eventKey, title, company, actorEmail, novoStatus }) {
+// Notifica um evento de empresa mencionando seus responsáveis (menos o autor).
+// Fire-and-forget: falha aqui não derruba a request.
+async function notifyCompanyEvent({ eventKey, title, company, actorEmail, novoStatus }) {
   const facts = [
     { name: "Empresa", value: company.razaoSocial ?? company.nomeFantasia ?? "—" },
     { name: "CNPJ",    value: company.cnpj },
@@ -512,14 +501,11 @@ companyRoutes.post("/", async (req, res) => {
 
   await audit(req, "COMPANY_CREATE", "Company", company.id, undefined, company);
 
-  sendTeamsNotification({
+  notifyCompanyEvent({
     eventKey: "company_created",
     title: "Novo cliente cadastrado",
+    company,
     actorEmail: req.user?.email,
-    facts: [
-      { name: "Empresa", value: company.razaoSocial ?? company.nomeFantasia ?? "—" },
-      { name: "CNPJ",    value: company.cnpj },
-    ],
   }).catch(() => {});
 
   res.status(201).json(company);
@@ -609,12 +595,12 @@ companyRoutes.put("/:id", async (req, res) => {
   );
 
   if (newSituacao === "BLOQUEADO" && prevSituacao !== "BLOQUEADO") {
-    notifyCompanyStatus({
+    notifyCompanyEvent({
       eventKey: "company_blocked", title: "Empresa bloqueada",
       company: updated, actorEmail: req.user?.email,
     }).catch(() => {});
   } else if (prevSituacao === "BLOQUEADO" && newSituacao && newSituacao !== "BLOQUEADO") {
-    notifyCompanyStatus({
+    notifyCompanyEvent({
       eventKey: "company_unblocked", title: "Empresa desbloqueada",
       company: updated, actorEmail: req.user?.email, novoStatus: updated.situacao,
     }).catch(() => {});
@@ -658,12 +644,12 @@ companyRoutes.patch("/:id/status", async (req, res) => {
   await audit(req, active ? "COMPANY_STATUS_UPDATE" : "COMPANY_INACTIVATE", "Company", updated.id, before, updated);
 
   if (newStatusNorm === "BLOQUEADO" && prevSituacaoPatch !== "BLOQUEADO") {
-    notifyCompanyStatus({
+    notifyCompanyEvent({
       eventKey: "company_blocked", title: "Empresa bloqueada",
       company: updated, actorEmail: req.user?.email,
     }).catch(() => {});
   } else if (prevSituacaoPatch === "BLOQUEADO" && newStatusNorm && newStatusNorm !== "BLOQUEADO") {
-    notifyCompanyStatus({
+    notifyCompanyEvent({
       eventKey: "company_unblocked", title: "Empresa desbloqueada",
       company: updated, actorEmail: req.user?.email, novoStatus: updated.situacao,
     }).catch(() => {});
