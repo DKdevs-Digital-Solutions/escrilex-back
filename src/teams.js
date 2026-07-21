@@ -74,7 +74,7 @@ export async function sendTeamsNotification({ eventKey, recipients = [], title, 
 }
 
 // Payload plano — fácil de tratar no Power Automate via triggerBody()?['campo']
-function buildPayload({ eventKey, recipients, title, text, facts }) {
+export function buildPayload({ eventKey, recipients = [], title, text = "", facts = [] }) {
   const payload = {
     evento: eventKey ?? "notification",
     titulo: title,
@@ -85,13 +85,20 @@ function buildPayload({ eventKey, recipients, title, text, facts }) {
 
   // Expande cada fact como campo direto: { name: "Empresa", value: "X" } → payload.empresa = "X"
   for (const f of facts) {
-    const key = f.name
-      .toLowerCase()
-      .normalize("NFD").replace(/[̀-ͯ]/g, "")  // remove acentos
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_|_$/g, "");
+    const key = factKey(f.name);
+    if (!key) continue;
     payload[key] = String(f.value ?? "");
   }
 
   return payload;
+}
+
+// "Razão Social" → "razao_social".
+export function factKey(name) {
+  return String(name ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "");
 }

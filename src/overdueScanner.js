@@ -26,19 +26,19 @@ export async function scanAndNotifyOverdue() {
     });
     if (!responsible?.user?.email) continue;
 
-    const empresa = item.run.company.razaoSocial ?? item.run.company.cnpj;
     const facts = [
-      { name: "Empresa", value: empresa },
-      { name: "Setor", value: responsible.sector.name },
+      { name: "Empresa",    value: item.run.company.razaoSocial ?? item.run.company.nomeFantasia ?? "—" },
+      { name: "CNPJ",       value: item.run.company.cnpj },
+      { name: "Setor",      value: responsible.sector.name },
+      { name: "Responsavel", value: responsible.user.email },
     ];
-    if (item.snapshotItemDescription) facts.push({ name: "Item", value: item.snapshotItemDescription });
-    if (item.dueDate) facts.push({ name: "Vencimento", value: item.dueDate.toLocaleDateString("pt-BR") });
+    if (item.snapshotItemDescription) facts.push({ name: "Item",       value: item.snapshotItemDescription });
+    if (item.dueDate)                  facts.push({ name: "Vencimento", value: item.dueDate.toLocaleDateString("pt-BR") });
 
     await sendTeamsNotification({
       eventKey: "process_overdue",
       recipients: [responsible.user.email],
-      title: `Prazo vencido — ${item.run.company.cnpj}`,
-      text: `Há um item de processo com prazo vencido sob sua responsabilidade.`,
+      title: "Processo atrasado",
       facts,
     });
 

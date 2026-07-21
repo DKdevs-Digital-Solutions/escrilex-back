@@ -486,9 +486,8 @@ companyRoutes.post("/", async (req, res) => {
     eventKey: "company_created",
     title: "Novo cliente cadastrado",
     facts: [
-      { name: "Razão Social", value: company.razaoSocial ?? company.nomeFantasia ?? "—" },
-      { name: "CNPJ", value: company.cnpj },
-      { name: "Data", value: new Date().toLocaleString("pt-BR") },
+      { name: "Empresa", value: company.razaoSocial ?? company.nomeFantasia ?? "—" },
+      { name: "CNPJ",    value: company.cnpj },
     ],
   }).catch(() => {});
 
@@ -583,13 +582,19 @@ companyRoutes.put("/:id", async (req, res) => {
     sendTeamsNotification({
       eventKey: "company_blocked",
       title: "Empresa bloqueada",
-      facts: [{ name: "Empresa", value: label }, { name: "Data", value: new Date().toLocaleString("pt-BR") }],
+      facts: [
+        { name: "Empresa", value: label },
+        { name: "CNPJ",    value: updated.cnpj },
+      ],
     }).catch(() => {});
   } else if (prevSituacao === "BLOQUEADO" && newSituacao && newSituacao !== "BLOQUEADO") {
     sendTeamsNotification({
       eventKey: "company_unblocked",
       title: "Empresa desbloqueada",
-      facts: [{ name: "Empresa", value: label }, { name: "Data", value: new Date().toLocaleString("pt-BR") }],
+      facts: [
+        { name: "Empresa", value: label },
+        { name: "CNPJ",    value: updated.cnpj },
+      ],
     }).catch(() => {});
   }
 
@@ -635,13 +640,19 @@ companyRoutes.patch("/:id/status", async (req, res) => {
     sendTeamsNotification({
       eventKey: "company_blocked",
       title: "Empresa bloqueada",
-      facts: [{ name: "Empresa", value: patchLabel }, { name: "Data", value: new Date().toLocaleString("pt-BR") }],
+      facts: [
+        { name: "Empresa", value: patchLabel },
+        { name: "CNPJ",    value: updated.cnpj },
+      ],
     }).catch(() => {});
   } else if (prevSituacaoPatch === "BLOQUEADO" && newStatusNorm && newStatusNorm !== "BLOQUEADO") {
     sendTeamsNotification({
       eventKey: "company_unblocked",
       title: "Empresa desbloqueada",
-      facts: [{ name: "Empresa", value: patchLabel }, { name: "Data", value: new Date().toLocaleString("pt-BR") }],
+      facts: [
+        { name: "Empresa", value: patchLabel },
+        { name: "CNPJ",    value: updated.cnpj },
+      ],
     }).catch(() => {});
   }
 
@@ -859,8 +870,8 @@ companyRoutes.put("/:id/responsibles", async (req, res) => {
     eventKey: "responsible_changed",
     title: "Alteração de responsável",
     facts: [
-      { name: "Empresa", value: company.razaoSocial ?? company.nomeFantasia ?? company.cnpj },
-      { name: "Data", value: new Date().toLocaleString("pt-BR") },
+      { name: "Empresa", value: company.razaoSocial ?? company.nomeFantasia ?? "—" },
+      { name: "CNPJ",    value: company.cnpj },
     ],
   }).catch(() => {});
 

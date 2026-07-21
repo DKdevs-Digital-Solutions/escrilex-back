@@ -463,13 +463,13 @@ async function sendBlockedNotification(companyId, empresa, cnpjCpf, actorEmail) 
     if (emails.length === 0) return;
 
     await sendTeamsNotification({
+      eventKey: "company_blocked",
       recipients: emails,
-      title: `Empresa bloqueada: ${empresa || cnpjCpf || companyId}`,
-      text: `A empresa ${empresa || "sem nome"} foi marcada como Bloqueada.`,
+      title: "Empresa bloqueada",
       facts: [
-        { name: "CNPJ/CPF", value: cnpjCpf || "-" },
-        { name: "Responsável pela alteração", value: actorEmail || "-" },
-        { name: "Data/hora", value: new Date().toLocaleString("pt-BR") },
+        { name: "Empresa",  value: empresa || "—" },
+        { name: "CNPJ",     value: cnpjCpf || "—" },
+        { name: "Alterado por", value: actorEmail || "—" },
       ],
     });
   } catch (error) {

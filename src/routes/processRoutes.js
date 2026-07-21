@@ -313,10 +313,10 @@ processRoutes.post("/start", async (req, res) => {
     eventKey: "process_started",
     title: "Processo iniciado",
     facts: [
-      { name: "Empresa", value: company?.razaoSocial ?? company?.nomeFantasia ?? body.data.companyId },
-      { name: "Tipo",    value: body.data.type },
+      { name: "Empresa",  value: company?.razaoSocial ?? company?.nomeFantasia ?? "—" },
+      { name: "CNPJ",     value: company?.cnpj ?? "—" },
+      { name: "Tipo",     value: body.data.type },
       { name: "Template", value: template.name },
-      { name: "Data",    value: new Date().toLocaleString("pt-BR") },
     ],
   }).catch(() => {});
 
@@ -400,9 +400,9 @@ processRoutes.patch("/item/:itemRunId", async (req, res) => {
           eventKey: "process_completed",
           title: "Processo concluído",
           facts: [
-            { name: "Empresa",  value: run.company?.razaoSocial ?? run.company?.nomeFantasia ?? run.companyId },
-            { name: "Tipo",     value: run.type },
-            { name: "Data",     value: new Date().toLocaleString("pt-BR") },
+            { name: "Empresa", value: run.company?.razaoSocial ?? run.company?.nomeFantasia ?? "—" },
+            { name: "CNPJ",    value: run.company?.cnpj ?? "—" },
+            { name: "Tipo",    value: run.type },
           ],
         }).catch(() => {});
       }
