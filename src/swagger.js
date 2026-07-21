@@ -880,7 +880,7 @@ export function buildOpenApiSpec() {
     info: {
       title: "Escrilex Back API",
       version: "1.0.0",
-      description: "Documentação das chamadas disponíveis do backend, incluindo dashboard, empresas, process, templates, integração e configuração única de e-mail.",
+      description: "Documentação das chamadas disponíveis do backend, incluindo dashboard, empresas, process, templates e configuração de notificações do Microsoft Teams.",
     },
     servers: [{ url: "https://escrilex-back.onrender.com" }],
     components: {

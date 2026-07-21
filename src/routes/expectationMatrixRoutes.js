@@ -442,7 +442,7 @@ async function getMatrixRow(companyId, req) {
 }
 
 /**
- * Notifica por e-mail todos os responsáveis de setores da empresa ao bloquear.
+ * Notifica no Teams ao bloquear a empresa, listando os responsáveis de setor.
  * Usa CompanySectorResponsible em vez de colunas fixas.
  */
 async function sendBlockedNotification(companyId, empresa, cnpjCpf, actorEmail) {

@@ -583,8 +583,9 @@ companyRoutes.put("/:id", async (req, res) => {
       eventKey: "company_blocked",
       title: "Empresa bloqueada",
       facts: [
-        { name: "Empresa", value: label },
-        { name: "CNPJ",    value: updated.cnpj },
+        { name: "Empresa",      value: label },
+        { name: "CNPJ",         value: updated.cnpj },
+        { name: "Alterado por", value: req.user?.email ?? "—" },
       ],
     }).catch(() => {});
   } else if (prevSituacao === "BLOQUEADO" && newSituacao && newSituacao !== "BLOQUEADO") {
@@ -592,8 +593,9 @@ companyRoutes.put("/:id", async (req, res) => {
       eventKey: "company_unblocked",
       title: "Empresa desbloqueada",
       facts: [
-        { name: "Empresa", value: label },
-        { name: "CNPJ",    value: updated.cnpj },
+        { name: "Empresa",      value: label },
+        { name: "CNPJ",         value: updated.cnpj },
+        { name: "Alterado por", value: req.user?.email ?? "—" },
       ],
     }).catch(() => {});
   }
@@ -641,8 +643,9 @@ companyRoutes.patch("/:id/status", async (req, res) => {
       eventKey: "company_blocked",
       title: "Empresa bloqueada",
       facts: [
-        { name: "Empresa", value: patchLabel },
-        { name: "CNPJ",    value: updated.cnpj },
+        { name: "Empresa",      value: patchLabel },
+        { name: "CNPJ",         value: updated.cnpj },
+        { name: "Alterado por", value: req.user?.email ?? "—" },
       ],
     }).catch(() => {});
   } else if (prevSituacaoPatch === "BLOQUEADO" && newStatusNorm && newStatusNorm !== "BLOQUEADO") {
@@ -650,8 +653,9 @@ companyRoutes.patch("/:id/status", async (req, res) => {
       eventKey: "company_unblocked",
       title: "Empresa desbloqueada",
       facts: [
-        { name: "Empresa", value: patchLabel },
-        { name: "CNPJ",    value: updated.cnpj },
+        { name: "Empresa",      value: patchLabel },
+        { name: "CNPJ",         value: updated.cnpj },
+        { name: "Alterado por", value: req.user?.email ?? "—" },
       ],
     }).catch(() => {});
   }
@@ -870,8 +874,9 @@ companyRoutes.put("/:id/responsibles", async (req, res) => {
     eventKey: "responsible_changed",
     title: "Alteração de responsável",
     facts: [
-      { name: "Empresa", value: company.razaoSocial ?? company.nomeFantasia ?? "—" },
-      { name: "CNPJ",    value: company.cnpj },
+      { name: "Empresa",      value: company.razaoSocial ?? company.nomeFantasia ?? "—" },
+      { name: "CNPJ",         value: company.cnpj },
+      { name: "Alterado por", value: req.user?.email ?? "—" },
     ],
   }).catch(() => {});
 
