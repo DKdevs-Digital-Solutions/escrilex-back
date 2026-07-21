@@ -38,11 +38,12 @@ export async function isEventEnabled(eventKey) {
  * @param {object} params
  * @param {string} [params.eventKey] Chave do evento (verifica se está habilitado).
  * @param {string[]} [params.recipients] E-mails dos responsáveis (exibidos no card).
+ * @param {string} [params.actorEmail] Quem fez a alteração — sai da lista de menções.
  * @param {string} params.title Título da notificação.
  * @param {string} [params.text] Corpo/descrição.
  * @param {{name:string, value:string}[]} [params.facts] Pares rótulo/valor exibidos no card.
  */
-export async function sendTeamsNotification({ eventKey, recipients = [], title, text = "", facts = [] }) {
+export async function sendTeamsNotification({ eventKey, recipients = [], actorEmail, title, text = "", facts = [] }) {
   if (eventKey) {
     const enabled = await isEventEnabled(eventKey);
     if (!enabled) return { delivered: false, reason: "event_disabled" };
@@ -50,7 +51,7 @@ export async function sendTeamsNotification({ eventKey, recipients = [], title, 
 
   const config = await loadConfig();
   if (!config) {
-    console.log("[TEAMS MOCK]", { eventKey, recipients, title, text, facts });
+    console.log("[TEAMS MOCK]", { eventKey, recipients, actorEmail, title, text, facts });
     return { delivered: false, reason: "not_configured" };
   }
 
@@ -58,7 +59,7 @@ export async function sendTeamsNotification({ eventKey, recipients = [], title, 
     const res = await fetch(config.webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildPayload({ eventKey, recipients, title, text, facts })),
+      body: JSON.stringify(buildPayload({ eventKey, recipients, actorEmail, title, text, facts })),
     });
 
     if (!res.ok) {
@@ -74,12 +75,20 @@ export async function sendTeamsNotification({ eventKey, recipients = [], title, 
 }
 
 // Payload plano — fácil de tratar no Power Automate via triggerBody()?['campo']
-export function buildPayload({ eventKey, recipients = [], title, text = "", facts = [] }) {
+export function buildPayload({ eventKey, recipients = [], actorEmail, title, text = "", facts = [] }) {
+  const norm = (e) => String(e ?? "").trim().toLowerCase();
+  const actor = norm(actorEmail);
+
+  // "mencionar" = responsáveis sem quem fez a alteração — evita marcar a própria pessoa.
+  const mencionar = recipients.filter((e) => norm(e) && norm(e) !== actor);
+
   const payload = {
     evento: eventKey ?? "notification",
     titulo: title,
     descricao: text || null,
     responsaveis: recipients.length ? recipients.join(", ") : null,
+    mencionar: mencionar.length ? mencionar.join(", ") : null,
+    alterado_por: actorEmail || null,
     data: new Date().toLocaleString("pt-BR"),
   };
 

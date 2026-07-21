@@ -180,6 +180,36 @@ const companyWritableFields = [
   "active",
 ];
 
+// E-mails ativos dos responsáveis de setor — usados como destinatários/menções no Teams.
+async function responsibleEmails(companyId) {
+  const rows = await prisma.companySectorResponsible.findMany({
+    where:   { companyId },
+    include: { user: { select: { email: true, active: true } } },
+  });
+  return [
+    ...new Set(
+      rows.map((r) => r.user).filter((u) => u?.active && u.email).map((u) => u.email),
+    ),
+  ];
+}
+
+// Notifica bloqueio/desbloqueio. Fire-and-forget: falha aqui não derruba a request.
+async function notifyCompanyStatus({ eventKey, title, company, actorEmail, novoStatus }) {
+  const facts = [
+    { name: "Empresa", value: company.razaoSocial ?? company.nomeFantasia ?? "—" },
+    { name: "CNPJ",    value: company.cnpj },
+  ];
+  if (novoStatus) facts.push({ name: "Novo status", value: novoStatus });
+
+  await sendTeamsNotification({
+    eventKey,
+    title,
+    actorEmail,
+    recipients: await responsibleEmails(company.id),
+    facts,
+  });
+}
+
 const companyInclude = {
   responsibles: {
     include: {
@@ -485,6 +515,7 @@ companyRoutes.post("/", async (req, res) => {
   sendTeamsNotification({
     eventKey: "company_created",
     title: "Novo cliente cadastrado",
+    actorEmail: req.user?.email,
     facts: [
       { name: "Empresa", value: company.razaoSocial ?? company.nomeFantasia ?? "—" },
       { name: "CNPJ",    value: company.cnpj },
@@ -577,26 +608,15 @@ companyRoutes.put("/:id", async (req, res) => {
     sanitizeForAudit(response),
   );
 
-  const label = updated.razaoSocial ?? updated.nomeFantasia ?? updated.cnpj;
   if (newSituacao === "BLOQUEADO" && prevSituacao !== "BLOQUEADO") {
-    sendTeamsNotification({
-      eventKey: "company_blocked",
-      title: "Empresa bloqueada",
-      facts: [
-        { name: "Empresa",      value: label },
-        { name: "CNPJ",         value: updated.cnpj },
-        { name: "Alterado por", value: req.user?.email ?? "—" },
-      ],
+    notifyCompanyStatus({
+      eventKey: "company_blocked", title: "Empresa bloqueada",
+      company: updated, actorEmail: req.user?.email,
     }).catch(() => {});
   } else if (prevSituacao === "BLOQUEADO" && newSituacao && newSituacao !== "BLOQUEADO") {
-    sendTeamsNotification({
-      eventKey: "company_unblocked",
-      title: "Empresa desbloqueada",
-      facts: [
-        { name: "Empresa",      value: label },
-        { name: "CNPJ",         value: updated.cnpj },
-        { name: "Alterado por", value: req.user?.email ?? "—" },
-      ],
+    notifyCompanyStatus({
+      eventKey: "company_unblocked", title: "Empresa desbloqueada",
+      company: updated, actorEmail: req.user?.email, novoStatus: updated.situacao,
     }).catch(() => {});
   }
 
@@ -637,26 +657,15 @@ companyRoutes.patch("/:id/status", async (req, res) => {
 
   await audit(req, active ? "COMPANY_STATUS_UPDATE" : "COMPANY_INACTIVATE", "Company", updated.id, before, updated);
 
-  const patchLabel = updated.razaoSocial ?? updated.nomeFantasia ?? updated.cnpj;
   if (newStatusNorm === "BLOQUEADO" && prevSituacaoPatch !== "BLOQUEADO") {
-    sendTeamsNotification({
-      eventKey: "company_blocked",
-      title: "Empresa bloqueada",
-      facts: [
-        { name: "Empresa",      value: patchLabel },
-        { name: "CNPJ",         value: updated.cnpj },
-        { name: "Alterado por", value: req.user?.email ?? "—" },
-      ],
+    notifyCompanyStatus({
+      eventKey: "company_blocked", title: "Empresa bloqueada",
+      company: updated, actorEmail: req.user?.email,
     }).catch(() => {});
   } else if (prevSituacaoPatch === "BLOQUEADO" && newStatusNorm && newStatusNorm !== "BLOQUEADO") {
-    sendTeamsNotification({
-      eventKey: "company_unblocked",
-      title: "Empresa desbloqueada",
-      facts: [
-        { name: "Empresa",      value: patchLabel },
-        { name: "CNPJ",         value: updated.cnpj },
-        { name: "Alterado por", value: req.user?.email ?? "—" },
-      ],
+    notifyCompanyStatus({
+      eventKey: "company_unblocked", title: "Empresa desbloqueada",
+      company: updated, actorEmail: req.user?.email, novoStatus: updated.situacao,
     }).catch(() => {});
   }
 
@@ -873,10 +882,12 @@ companyRoutes.put("/:id/responsibles", async (req, res) => {
   sendTeamsNotification({
     eventKey: "responsible_changed",
     title: "Alteração de responsável",
+    actorEmail: req.user?.email,
+    // Menciona os responsáveis resultantes da alteração, não os anteriores.
+    recipients: [...new Set(updated.map((r) => r.user?.email).filter(Boolean))],
     facts: [
-      { name: "Empresa",      value: company.razaoSocial ?? company.nomeFantasia ?? "—" },
-      { name: "CNPJ",         value: company.cnpj },
-      { name: "Alterado por", value: req.user?.email ?? "—" },
+      { name: "Empresa", value: company.razaoSocial ?? company.nomeFantasia ?? "—" },
+      { name: "CNPJ",    value: company.cnpj },
     ],
   }).catch(() => {});
 

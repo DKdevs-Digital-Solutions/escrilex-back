@@ -27,10 +27,9 @@ export async function scanAndNotifyOverdue() {
     if (!responsible?.user?.email) continue;
 
     const facts = [
-      { name: "Empresa",    value: item.run.company.razaoSocial ?? item.run.company.nomeFantasia ?? "—" },
-      { name: "CNPJ",       value: item.run.company.cnpj },
-      { name: "Setor",      value: responsible.sector.name },
-      { name: "Responsavel", value: responsible.user.email },
+      { name: "Empresa", value: item.run.company.razaoSocial ?? item.run.company.nomeFantasia ?? "—" },
+      { name: "CNPJ",    value: item.run.company.cnpj },
+      { name: "Setor",   value: responsible.sector.name },
     ];
     if (item.snapshotItemDescription) facts.push({ name: "Item",       value: item.snapshotItemDescription });
     if (item.dueDate)                  facts.push({ name: "Vencimento", value: item.dueDate.toLocaleDateString("pt-BR") });

@@ -442,13 +442,14 @@ async function getMatrixRow(companyId, req) {
 }
 
 /**
- * Notifica no Teams ao bloquear a empresa, listando os responsáveis de setor.
+ * Notifica no Teams quando a empresa é bloqueada ou desbloqueada,
+ * listando os responsáveis de setor como destinatários.
  * Usa CompanySectorResponsible em vez de colunas fixas.
  */
-async function sendBlockedNotification(companyId, empresa, cnpjCpf, actorEmail) {
+async function sendStatusChangeNotification(eventKey, title, row, actorEmail, novoStatus) {
   try {
     const responsibles = await prisma.companySectorResponsible.findMany({
-      where:   { companyId },
+      where:   { companyId: row.companyId },
       include: { user: { select: { email: true, active: true } } },
     });
 
@@ -460,20 +461,16 @@ async function sendBlockedNotification(companyId, empresa, cnpjCpf, actorEmail) 
           .map((u) => u.email),
       ),
     ];
-    if (emails.length === 0) return;
 
-    await sendTeamsNotification({
-      eventKey: "company_blocked",
-      recipients: emails,
-      title: "Empresa bloqueada",
-      facts: [
-        { name: "Empresa",  value: empresa || "—" },
-        { name: "CNPJ",     value: cnpjCpf || "—" },
-        { name: "Alterado por", value: actorEmail || "—" },
-      ],
-    });
+    const facts = [
+      { name: "Empresa", value: row.empresa || "—" },
+      { name: "CNPJ",    value: row.cnpjCpf || "—" },
+    ];
+    if (novoStatus) facts.push({ name: "Novo status", value: novoStatus });
+
+    await sendTeamsNotification({ eventKey, recipients: emails, actorEmail, title, facts });
   } catch (error) {
-    console.error("[BLOCKED_STATUS_NOTIFY_ERROR]", error);
+    console.error("[STATUS_CHANGE_NOTIFY_ERROR]", error);
   }
 }
 
@@ -687,8 +684,16 @@ expectationMatrixRoutes.put("/:companyId", async (req, res) => {
   const after = await getMatrixRow(req.params.companyId, req);
   await audit(req, "EXPECTATION_MATRIX_UPDATE", "Company", req.params.companyId, before, after);
 
-  if ((body.data.status ?? body.data.situacao) === "Bloqueado") {
-    await sendBlockedNotification(req.params.companyId, after.empresa, after.cnpjCpf, req.user?.email);
+  // Notifica só na transição — evita reenviar ao salvar uma empresa já bloqueada.
+  if (newStatus !== undefined) {
+    const prevNorm = String(before.status ?? "").trim().toUpperCase();
+    const nextNorm = String(newStatus).trim().toUpperCase();
+
+    if (nextNorm === "BLOQUEADO" && prevNorm !== "BLOQUEADO") {
+      await sendStatusChangeNotification("company_blocked", "Empresa bloqueada", after, req.user?.email);
+    } else if (prevNorm === "BLOQUEADO" && nextNorm !== "BLOQUEADO") {
+      await sendStatusChangeNotification("company_unblocked", "Empresa desbloqueada", after, req.user?.email, newStatus);
+    }
   }
 
   res.json(after);
