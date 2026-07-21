@@ -46,7 +46,11 @@ export async function isEventEnabled(eventKey) {
 export async function sendTeamsNotification({ eventKey, recipients = [], actorEmail, title, text = "", facts = [] }) {
   if (eventKey) {
     const enabled = await isEventEnabled(eventKey);
-    if (!enabled) return { delivered: false, reason: "event_disabled" };
+    if (!enabled) {
+      // Log explícito: sem isso o evento some sem deixar rastro e parece "bug".
+      console.log(`[TEAMS_SKIP] evento "${eventKey}" desabilitado nas configurações.`);
+      return { delivered: false, reason: "event_disabled" };
+    }
   }
 
   const config = await loadConfig();
