@@ -10,29 +10,47 @@ import { env } from "./env.js";
 async function loadConfig() {
   try {
     const cfg = await prisma.notificationConfig.findUnique({ where: { singletonKey: "main" } });
-    if (cfg?.active && cfg.webhookUrl) return { webhookUrl: cfg.webhookUrl, source: "database" };
+    if (cfg?.active && cfg.webhookUrl) return { webhookUrl: cfg.webhookUrl, enabledEvents: cfg.enabledEvents ?? [], source: "database" };
   } catch (error) {
     console.error("[TEAMS_CONFIG_LOAD_ERROR]", error);
   }
 
   if (env.TEAMS_WEBHOOK_URL) {
-    return { webhookUrl: env.TEAMS_WEBHOOK_URL, source: "env" };
+    return { webhookUrl: env.TEAMS_WEBHOOK_URL, enabledEvents: [], source: "env" };
   }
   return null;
 }
 
 /**
+ * Verifica se um evento está habilitado nas configurações.
+ * Array vazio = sem filtro (todos habilitados — comportamento legado).
+ */
+export async function isEventEnabled(eventKey) {
+  const config = await loadConfig();
+  if (!config) return false;
+  const events = Array.isArray(config.enabledEvents) ? config.enabledEvents : [];
+  if (events.length === 0) return true;
+  return events.includes(eventKey);
+}
+
+/**
  * Envia uma notificação para o Teams.
  * @param {object} params
+ * @param {string} [params.eventKey] Chave do evento (verifica se está habilitado).
  * @param {string[]} [params.recipients] E-mails dos responsáveis (exibidos no card).
  * @param {string} params.title Título da notificação.
  * @param {string} [params.text] Corpo/descrição.
  * @param {{name:string, value:string}[]} [params.facts] Pares rótulo/valor exibidos no card.
  */
-export async function sendTeamsNotification({ recipients = [], title, text = "", facts = [] }) {
+export async function sendTeamsNotification({ eventKey, recipients = [], title, text = "", facts = [] }) {
+  if (eventKey) {
+    const enabled = await isEventEnabled(eventKey);
+    if (!enabled) return { delivered: false, reason: "event_disabled" };
+  }
+
   const config = await loadConfig();
   if (!config) {
-    console.log("[TEAMS MOCK]", { recipients, title, text, facts });
+    console.log("[TEAMS MOCK]", { eventKey, recipients, title, text, facts });
     return { delivered: false, reason: "not_configured" };
   }
 

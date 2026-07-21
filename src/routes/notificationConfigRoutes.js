@@ -2,14 +2,24 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { audit } from "../audit.js";
+import { sendTeamsNotification } from "../teams.js";
 
 export const notificationConfigRoutes = Router();
 
 // Aceita ambos os caminhos por compatibilidade.
 const configPaths = ["/notification-config", "/teams-config"];
 
-const emptyToNull = (value) => (value === "" ? null : value);
+const ALL_EVENTS = [
+  { key: "company_created",     label: "Novo cliente cadastrado" },
+  { key: "process_started",     label: "Processo iniciado" },
+  { key: "process_completed",   label: "Processo concluído" },
+  { key: "process_overdue",     label: "Processo atrasado" },
+  { key: "responsible_changed", label: "Alteração de responsável" },
+  { key: "company_blocked",     label: "Empresa bloqueada" },
+  { key: "company_unblocked",   label: "Empresa desbloqueada" },
+];
 
+const emptyToNull = (value) => (value === "" ? null : value);
 const nullableString = z.preprocess(emptyToNull, z.string().nullable().optional());
 const optionalBoolean = z.preprocess((value) => {
   if (value === undefined || value === null || value === "") return undefined;
@@ -21,18 +31,20 @@ const optionalBoolean = z.preprocess((value) => {
 }, z.boolean().optional());
 
 const saveSchema = z.object({
-  webhookUrl: nullableString,
-  active: optionalBoolean,
+  webhookUrl:    nullableString,
+  active:        optionalBoolean,
+  enabledEvents: z.array(z.string()).optional(),
 });
 
 function serialize(config) {
   if (!config) return null;
   return {
-    id: config.id,
-    webhookUrl: config.webhookUrl,
-    active: config.active,
-    createdAt: config.createdAt,
-    updatedAt: config.updatedAt,
+    id:            config.id,
+    webhookUrl:    config.webhookUrl,
+    enabledEvents: config.enabledEvents ?? [],
+    active:        config.active,
+    createdAt:     config.createdAt,
+    updatedAt:     config.updatedAt,
   };
 }
 
@@ -40,9 +52,10 @@ function pickDefined(data) {
   return Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
 }
 
+// GET /api/admin/notification-config  ou  /api/admin/teams-config
 notificationConfigRoutes.get(configPaths, async (_req, res) => {
   const config = await prisma.notificationConfig.findUnique({ where: { singletonKey: "main" } });
-  res.json(serialize(config));
+  res.json({ ...serialize(config), availableEvents: ALL_EVENTS });
 });
 
 async function upsertConfig(req, res) {
@@ -55,9 +68,10 @@ async function upsertConfig(req, res) {
   const config = await prisma.notificationConfig.upsert({
     where: { singletonKey: "main" },
     create: {
-      singletonKey: "main",
-      webhookUrl: data.webhookUrl ?? null,
-      active: data.active ?? true,
+      singletonKey:  "main",
+      webhookUrl:    data.webhookUrl ?? null,
+      enabledEvents: data.enabledEvents ?? [],
+      active:        data.active ?? true,
     },
     update: data,
   });
@@ -84,4 +98,26 @@ notificationConfigRoutes.delete(configPaths, async (req, res) => {
   await prisma.notificationConfig.delete({ where: { singletonKey: "main" } });
   await audit(req, "NOTIFICATION_CONFIG_DELETE", "NotificationConfig", existing.id, serialize(existing), undefined);
   res.json({ ok: true });
+});
+
+// POST /api/admin/notification-config/test  — envia mensagem de teste
+notificationConfigRoutes.post(["/notification-config/test", "/teams-config/test"], async (_req, res) => {
+  const config = await prisma.notificationConfig.findUnique({ where: { singletonKey: "main" } });
+  if (!config?.webhookUrl) {
+    return res.status(400).json({ error: "Nenhuma URL de webhook configurada." });
+  }
+
+  const result = await sendTeamsNotification({
+    title: "Teste de integração — Escrilex",
+    text:  "Esta é uma mensagem de teste enviada pelo sistema Escrilex para validar a integração com o Microsoft Teams.",
+    facts: [
+      { name: "Status",    value: "OK" },
+      { name: "Data/hora", value: new Date().toLocaleString("pt-BR") },
+    ],
+  });
+
+  if (!result.delivered) {
+    return res.status(502).json({ error: `Falha ao enviar: ${result.reason}` });
+  }
+  res.json({ ok: true, message: "Mensagem enviada com sucesso." });
 });

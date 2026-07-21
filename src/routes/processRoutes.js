@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../prisma.js";
 import { audit } from "../audit.js";
+import { sendTeamsNotification } from "../teams.js";
 
 const ProcessTypeEnum = z.enum(["ENTRADA","SAIDA"]);
 // We use CONCLUIDO as the canonical "done" status.
@@ -306,6 +307,19 @@ processRoutes.post("/start", async (req, res) => {
   }
 
   await audit(req, "PROCESS_START", "ProcessRun", run.id, undefined, body.data);
+
+  const company = await prisma.company.findUnique({ where: { id: body.data.companyId }, select: { razaoSocial: true, nomeFantasia: true, cnpj: true } });
+  sendTeamsNotification({
+    eventKey: "process_started",
+    title: "Processo iniciado",
+    facts: [
+      { name: "Empresa", value: company?.razaoSocial ?? company?.nomeFantasia ?? body.data.companyId },
+      { name: "Tipo",    value: body.data.type },
+      { name: "Template", value: template.name },
+      { name: "Data",    value: new Date().toLocaleString("pt-BR") },
+    ],
+  }).catch(() => {});
+
   res.status(201).json({ runId: run.id, templateId: template.id, itemRunMap });
 });
 
@@ -366,5 +380,34 @@ processRoutes.patch("/item/:itemRunId", async (req, res) => {
   }
 
   await audit(req, "PROCESS_ITEM_UPDATE", "ProcessItemRun", updated.id, itemRun, updated);
+
+  // Verifica se todos os itens obrigatórios estão concluídos → processo concluído.
+  if (["CONCLUIDO", "NA"].includes(normalizeStatus(body.data.status ?? ""))) {
+    const allItems = await prisma.processItemRun.findMany({
+      where: { runId: itemRun.runId },
+      select: { status: true, snapshotIsRequired: true },
+    });
+    const requiredItems = allItems.filter((i) => i.snapshotIsRequired);
+    const checkItems = requiredItems.length > 0 ? requiredItems : allItems;
+    const allDone = checkItems.every((i) => ["CONCLUIDO", "NA"].includes(i.status));
+    if (allDone) {
+      const run = await prisma.processRun.findUnique({
+        where: { id: itemRun.runId },
+        include: { company: { select: { razaoSocial: true, nomeFantasia: true, cnpj: true } } },
+      });
+      if (run) {
+        sendTeamsNotification({
+          eventKey: "process_completed",
+          title: "Processo concluído",
+          facts: [
+            { name: "Empresa",  value: run.company?.razaoSocial ?? run.company?.nomeFantasia ?? run.companyId },
+            { name: "Tipo",     value: run.type },
+            { name: "Data",     value: new Date().toLocaleString("pt-BR") },
+          ],
+        }).catch(() => {});
+      }
+    }
+  }
+
   res.json({ ok: true });
 });

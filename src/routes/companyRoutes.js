@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { audit } from "../audit.js";
+import { sendTeamsNotification } from "../teams.js";
 
 export const companyRoutes = Router();
 
@@ -480,6 +481,17 @@ companyRoutes.post("/", async (req, res) => {
   });
 
   await audit(req, "COMPANY_CREATE", "Company", company.id, undefined, company);
+
+  sendTeamsNotification({
+    eventKey: "company_created",
+    title: "Novo cliente cadastrado",
+    facts: [
+      { name: "Razão Social", value: company.razaoSocial ?? company.nomeFantasia ?? "—" },
+      { name: "CNPJ", value: company.cnpj },
+      { name: "Data", value: new Date().toLocaleString("pt-BR") },
+    ],
+  }).catch(() => {});
+
   res.status(201).json(company);
 });
 
@@ -565,6 +577,22 @@ companyRoutes.put("/:id", async (req, res) => {
     sanitizeForAudit(mergeCompanyWithMatrix(before, beforeMatrix)),
     sanitizeForAudit(response),
   );
+
+  const label = updated.razaoSocial ?? updated.nomeFantasia ?? updated.cnpj;
+  if (newSituacao === "BLOQUEADO" && prevSituacao !== "BLOQUEADO") {
+    sendTeamsNotification({
+      eventKey: "company_blocked",
+      title: "Empresa bloqueada",
+      facts: [{ name: "Empresa", value: label }, { name: "Data", value: new Date().toLocaleString("pt-BR") }],
+    }).catch(() => {});
+  } else if (prevSituacao === "BLOQUEADO" && newSituacao && newSituacao !== "BLOQUEADO") {
+    sendTeamsNotification({
+      eventKey: "company_unblocked",
+      title: "Empresa desbloqueada",
+      facts: [{ name: "Empresa", value: label }, { name: "Data", value: new Date().toLocaleString("pt-BR") }],
+    }).catch(() => {});
+  }
+
   res.json(response);
 });
 
@@ -601,6 +629,22 @@ companyRoutes.patch("/:id/status", async (req, res) => {
   });
 
   await audit(req, active ? "COMPANY_STATUS_UPDATE" : "COMPANY_INACTIVATE", "Company", updated.id, before, updated);
+
+  const patchLabel = updated.razaoSocial ?? updated.nomeFantasia ?? updated.cnpj;
+  if (newStatusNorm === "BLOQUEADO" && prevSituacaoPatch !== "BLOQUEADO") {
+    sendTeamsNotification({
+      eventKey: "company_blocked",
+      title: "Empresa bloqueada",
+      facts: [{ name: "Empresa", value: patchLabel }, { name: "Data", value: new Date().toLocaleString("pt-BR") }],
+    }).catch(() => {});
+  } else if (prevSituacaoPatch === "BLOQUEADO" && newStatusNorm && newStatusNorm !== "BLOQUEADO") {
+    sendTeamsNotification({
+      eventKey: "company_unblocked",
+      title: "Empresa desbloqueada",
+      facts: [{ name: "Empresa", value: patchLabel }, { name: "Data", value: new Date().toLocaleString("pt-BR") }],
+    }).catch(() => {});
+  }
+
   res.json(updated);
 });
 
@@ -810,6 +854,15 @@ companyRoutes.put("/:id/responsibles", async (req, res) => {
     auditResponsiblesSnapshot(before),
     auditResponsiblesSnapshot(updated),
   );
+
+  sendTeamsNotification({
+    eventKey: "responsible_changed",
+    title: "Alteração de responsável",
+    facts: [
+      { name: "Empresa", value: company.razaoSocial ?? company.nomeFantasia ?? company.cnpj },
+      { name: "Data", value: new Date().toLocaleString("pt-BR") },
+    ],
+  }).catch(() => {});
 
   res.json({
     ok: true,

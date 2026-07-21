@@ -35,6 +35,7 @@ export async function scanAndNotifyOverdue() {
     if (item.dueDate) facts.push({ name: "Vencimento", value: item.dueDate.toLocaleDateString("pt-BR") });
 
     await sendTeamsNotification({
+      eventKey: "process_overdue",
       recipients: [responsible.user.email],
       title: `Prazo vencido — ${item.run.company.cnpj}`,
       text: `Há um item de processo com prazo vencido sob sua responsabilidade.`,

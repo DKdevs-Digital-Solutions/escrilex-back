@@ -290,6 +290,8 @@ model NotificationConfig {
   singletonKey  String   @unique @default("main")
   // URL do webhook do Teams (Power Automate/Workflows ou Incoming Webhook).
   webhookUrl    String?
+  // Eventos habilitados. Array vazio = todos habilitados (comportamento legado).
+  enabledEvents Json     @default("[]")
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
