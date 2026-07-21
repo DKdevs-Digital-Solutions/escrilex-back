@@ -58,7 +58,7 @@ export async function sendTeamsNotification({ eventKey, recipients = [], title, 
     const res = await fetch(config.webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildAdaptiveCard({ recipients, title, text, facts })),
+      body: JSON.stringify(buildPayload({ eventKey, recipients, title, text, facts })),
     });
 
     if (!res.ok) {
@@ -73,35 +73,25 @@ export async function sendTeamsNotification({ eventKey, recipients = [], title, 
   }
 }
 
-function buildAdaptiveCard({ recipients, title, text, facts }) {
-  const body = [
-    { type: "TextBlock", size: "Medium", weight: "Bolder", text: title, wrap: true },
-  ];
-  if (text) body.push({ type: "TextBlock", text, wrap: true, spacing: "Small" });
-
-  const factItems = [...facts];
-  if (recipients.length) {
-    factItems.push({ name: "Responsáveis", value: recipients.join(", ") });
-  }
-  if (factItems.length) {
-    body.push({
-      type: "FactSet",
-      facts: factItems.map((f) => ({ title: f.name, value: String(f.value ?? "—") })),
-    });
-  }
-
-  return {
-    type: "message",
-    attachments: [
-      {
-        contentType: "application/vnd.microsoft.card.adaptive",
-        content: {
-          $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
-          type: "AdaptiveCard",
-          version: "1.4",
-          body,
-        },
-      },
-    ],
+// Payload plano — fácil de tratar no Power Automate via triggerBody()?['campo']
+function buildPayload({ eventKey, recipients, title, text, facts }) {
+  const payload = {
+    evento: eventKey ?? "notification",
+    titulo: title,
+    descricao: text || null,
+    responsaveis: recipients.length ? recipients.join(", ") : null,
+    data: new Date().toLocaleString("pt-BR"),
   };
+
+  // Expande cada fact como campo direto: { name: "Empresa", value: "X" } → payload.empresa = "X"
+  for (const f of facts) {
+    const key = f.name
+      .toLowerCase()
+      .normalize("NFD").replace(/[̀-ͯ]/g, "")  // remove acentos
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "");
+    payload[key] = String(f.value ?? "");
+  }
+
+  return payload;
 }
