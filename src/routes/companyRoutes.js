@@ -5,6 +5,7 @@ import { prisma } from "../prisma.js";
 import { audit } from "../audit.js";
 import { sendTeamsNotification } from "../teams.js";
 import { responsibleEmails } from "../responsibles.js";
+import { applyStatusChangeToSaidaRun } from "../processCascade.js";
 
 export const companyRoutes = Router();
 
@@ -606,6 +607,9 @@ companyRoutes.put("/:id", async (req, res) => {
     }).catch(() => {});
   }
 
+  // Se entrou em "Em Saída", inicia a régua do processo de saída.
+  applyStatusChangeToSaidaRun(updated.id, updated.situacao, new Date()).catch(() => {});
+
   res.json(response);
 });
 
@@ -654,6 +658,9 @@ companyRoutes.patch("/:id/status", async (req, res) => {
       company: updated, actorEmail: req.user?.email, novoStatus: updated.situacao,
     }).catch(() => {});
   }
+
+  // Se entrou em "Em Saída", inicia a régua do processo de saída.
+  applyStatusChangeToSaidaRun(updated.id, updated.situacao, new Date()).catch(() => {});
 
   res.json(updated);
 });

@@ -5,6 +5,7 @@ import { prisma } from "../prisma.js";
 import { audit } from "../audit.js";
 import { sendTeamsNotification } from "../teams.js";
 import { responsibleEmails } from "../responsibles.js";
+import { recomputeCascadeDueDates, resolveInitialAnchor } from "../processCascade.js";
 
 const ProcessTypeEnum = z.enum(["ENTRADA","SAIDA"]);
 // We use CONCLUIDO as the canonical "done" status.
@@ -14,40 +15,6 @@ const ItemStatusEnum = z.enum(["PENDENTE","EM_ANDAMENTO","CONCLUIDO","NA","FEITO
 function normalizeStatus(s) {
   if (!s) return s;
   return s === "FEITO" ? "CONCLUIDO" : s;
-}
-
-
-function computeDueDate(anchorAt, itemSnapshot) {
-  if (!anchorAt) return null;
-
-  const ruleType = itemSnapshot.snapshotDueRuleType || "OFFSET_DAYS";
-  const param =
-    typeof itemSnapshot.snapshotDueRuleParam === "number"
-      ? itemSnapshot.snapshotDueRuleParam
-      : typeof itemSnapshot.snapshotOffsetDaysFromAnchor === "number"
-        ? itemSnapshot.snapshotOffsetDaysFromAnchor
-        : null;
-
-  if (ruleType === "DAY_OF_NEXT_MONTH") {
-    if (typeof param !== "number") return null;
-    const base = new Date(anchorAt);
-    // Always next month
-    const year = base.getFullYear();
-    const month = base.getMonth();
-    const nextMonth = month === 11 ? 0 : month + 1;
-    const nextYear = month === 11 ? year + 1 : year;
-
-    // Clamp day to the number of days in the next month
-    const daysInNextMonth = new Date(nextYear, nextMonth + 1, 0).getDate();
-    const day = Math.max(1, Math.min(param, daysInNextMonth));
-    return new Date(nextYear, nextMonth, day, 23, 59, 59, 999);
-  }
-
-  // Default OFFSET_DAYS
-  if (typeof param !== "number") return null;
-  const due = new Date(anchorAt);
-  due.setDate(due.getDate() + param);
-  return due;
 }
 
 export const processRoutes = Router();
@@ -269,11 +236,19 @@ processRoutes.post("/start", async (req, res) => {
   } else {
     template = await prisma.processTemplate.findFirst({
       where: { type: body.data.type, active: true },
-      orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+      orderBy: [{ createdAt: "desc" }],
       include: { sections: { include: { items: true } } },
     });
   }
   if (!template) return res.status(404).json({ error: "Template not found" });
+
+  // A régua do processo começa automaticamente: ENTRADA a partir do cadastro da
+  // empresa; SAÍDA a partir do momento em que o status virou "Em Saída".
+  const companyAnchor = await prisma.company.findUnique({
+    where: { id: body.data.companyId },
+    select: { dataCadastro: true, createdAt: true, situacao: true, dataSituacao: true },
+  });
+  const anchorAt = resolveInitialAnchor({ type: body.data.type, company: companyAnchor });
 
   const run = await prisma.processRun.create({
     data: {
@@ -281,6 +256,7 @@ processRoutes.post("/start", async (req, res) => {
       templateId: template.id,
       type: body.data.type,
       createdBy: actorId,
+      anchorAt,
       snapshotTemplateName: template.name,
       snapshotTemplateVersion: template.version,
     },
@@ -306,6 +282,10 @@ processRoutes.post("/start", async (req, res) => {
     });
     itemRunMap[it.id] = ir.id;
   }
+
+  // Já calcula os prazos da 1ª seção quando a âncora existe na criação (ENTRADA
+  // sempre; SAÍDA quando a empresa já está "Em Saída").
+  if (anchorAt) await recomputeCascadeDueDates(run.id);
 
   await audit(req, "PROCESS_START", "ProcessRun", run.id, undefined, body.data);
 
@@ -357,29 +337,11 @@ processRoutes.patch("/item/:itemRunId", async (req, res) => {
 
   const updated = await prisma.processItemRun.update({ where: { id: itemRun.id }, data });
 
-  // Anchor: the process starts when the first item is marked as CONCLUIDO.
-  // (Users expect "any first check" to start, not only "required" items.)
-  if (normalizeStatus(body.data.status) === "CONCLUIDO") {
-    const run = await prisma.processRun.findUnique({ where: { id: itemRun.runId } });
-    if (run && !run.anchorAt) {
-      const anchorAt = updated.doneAt || new Date();
-      await prisma.processRun.update({ where: { id: run.id }, data: { anchorAt } });
-
-      const runItems = await prisma.processItemRun.findMany({
-        where: { runId: run.id },
-        select: {
-          id: true,
-          snapshotDueRuleType: true,
-          snapshotDueRuleParam: true,
-          snapshotOffsetDaysFromAnchor: true,
-        },
-      });
-
-      for (const ri of runItems) {
-        const due = computeDueDate(anchorAt, ri);
-        if (due) await prisma.processItemRun.update({ where: { id: ri.id }, data: { dueDate: due } });
-      }
-    }
+  // A régua do processo já começou automaticamente (ENTRADA no cadastro; SAÍDA
+  // ao entrar em "Em Saída"). Aqui só recalculamos a cascata: concluir, marcar NA
+  // ou reabrir um item muda quando as próximas seções começam a contar.
+  if (body.data.status !== undefined) {
+    await recomputeCascadeDueDates(itemRun.runId);
   }
 
   await audit(req, "PROCESS_ITEM_UPDATE", "ProcessItemRun", updated.id, itemRun, updated);

@@ -5,6 +5,7 @@ import { prisma } from "../prisma.js";
 import { audit } from "../audit.js";
 import { sendTeamsNotification } from "../teams.js";
 import { responsibleEmails } from "../responsibles.js";
+import { applyStatusChangeToSaidaRun } from "../processCascade.js";
 
 export const expectationMatrixRoutes = Router();
 
@@ -683,6 +684,9 @@ expectationMatrixRoutes.put("/:companyId", async (req, res) => {
     } else if (prevNorm === "BLOQUEADO" && nextNorm !== "BLOQUEADO") {
       await sendStatusChangeNotification("company_unblocked", "Empresa desbloqueada", after, req.user?.email, newStatus);
     }
+
+    // Se entrou em "Em Saída", inicia a régua do processo de saída.
+    applyStatusChangeToSaidaRun(req.params.companyId, newStatus, new Date()).catch(() => {});
   }
 
   res.json(after);

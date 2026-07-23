@@ -24,7 +24,7 @@ templateRoutes.get("/default/by-type/:type", async (req, res) => {
 
   const t = await prisma.processTemplate.findFirst({
     where: { type: parsed.data, active: true },
-    orderBy: [{ version: "desc" }, { createdAt: "desc" }],
+    orderBy: [{ createdAt: "desc" }],
     include: {
       sections: {
         orderBy: { order: "asc" },
@@ -82,6 +82,33 @@ templateRoutes.put("/:id", async (req, res) => {
 
 // --- Sections ---
 
+// Reordena as seções de um processo em lote. Recebe a lista de ids na nova ordem;
+// o índice no array vira o valor de "order" (base 1). A ordem das seções define
+// a cascata de prazos no engine (cada seção conta a partir do fim da anterior).
+templateRoutes.put("/:id/sections/reorder", async (req, res) => {
+  const body = z.object({ order: z.array(z.string().min(1)).min(1) }).safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: body.error.flatten() });
+
+  const sections = await prisma.processTemplateSection.findMany({
+    where: { templateId: req.params.id },
+    select: { id: true },
+  });
+  const validIds = new Set(sections.map((s) => s.id));
+  const ordered = body.data.order.filter((id) => validIds.has(id));
+  if (ordered.length !== sections.length) {
+    return res.status(400).json({ error: "A lista de ordem não corresponde às seções do processo." });
+  }
+
+  await prisma.$transaction(
+    ordered.map((id, index) =>
+      prisma.processTemplateSection.update({ where: { id }, data: { order: index + 1 } }),
+    ),
+  );
+
+  await audit(req, "TEMPLATE_SECTIONS_REORDER", "ProcessTemplate", req.params.id, undefined, { order: ordered });
+  res.json({ ok: true });
+});
+
 templateRoutes.post("/:id/sections", async (req, res) => {
   const body = z.object({ name: z.string().min(1), order: z.number().int().optional() }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: body.error.flatten() });
@@ -120,6 +147,32 @@ templateRoutes.delete("/sections/:sectionId", async (req, res) => {
 });
 
 // --- Items ---
+
+// Reordena os itens de uma seção em lote. O índice no array vira "order" (base 1).
+// A ordem dos itens define a sequência dentro da seção (e a ordem de exibição).
+templateRoutes.put("/sections/:sectionId/items/reorder", async (req, res) => {
+  const body = z.object({ order: z.array(z.string().min(1)).min(1) }).safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: body.error.flatten() });
+
+  const items = await prisma.processTemplateItem.findMany({
+    where: { sectionId: req.params.sectionId },
+    select: { id: true },
+  });
+  const validIds = new Set(items.map((i) => i.id));
+  const ordered = body.data.order.filter((id) => validIds.has(id));
+  if (ordered.length !== items.length) {
+    return res.status(400).json({ error: "A lista de ordem não corresponde aos itens da seção." });
+  }
+
+  await prisma.$transaction(
+    ordered.map((id, index) =>
+      prisma.processTemplateItem.update({ where: { id }, data: { order: index + 1 } }),
+    ),
+  );
+
+  await audit(req, "TEMPLATE_ITEMS_REORDER", "ProcessTemplateSection", req.params.sectionId, undefined, { order: ordered });
+  res.json({ ok: true });
+});
 
 const itemSchema = z.object({
   sectionId: z.string().min(1),
