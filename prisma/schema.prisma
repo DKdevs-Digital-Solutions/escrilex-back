@@ -84,6 +84,8 @@ model CompanyPartner {
   email           String?
   telefoneEmpresa String?
   dataNascimento  DateTime?
+  instagram       String?
+  facebook        String?
   outros          String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

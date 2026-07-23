@@ -909,6 +909,8 @@ companyRoutes.post("/:id/partners", async (req, res) => {
       email: z.string().email().optional().nullable(),
       telefoneEmpresa: z.string().optional().nullable(),
       dataNascimento: z.coerce.date().optional().nullable(),
+      instagram: z.string().optional().nullable(),
+      facebook: z.string().optional().nullable(),
       outros: z.string().optional().nullable(),
     })
     .safeParse(req.body);
@@ -931,6 +933,8 @@ companyRoutes.put("/:id/partners/:partnerId", async (req, res) => {
       email: z.string().email().optional().nullable(),
       telefoneEmpresa: z.string().optional().nullable(),
       dataNascimento: z.coerce.date().optional().nullable(),
+      instagram: z.string().optional().nullable(),
+      facebook: z.string().optional().nullable(),
       outros: z.string().optional().nullable(),
     })
     .safeParse(req.body);
