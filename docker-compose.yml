@@ -4,8 +4,9 @@
 # Todos os valores vem das "Environment variables" da stack no Portainer.
 # A lista completa esta em env.example.
 #
-# As imagens escrilex-api e escrilex-web precisam ter sido buildadas antes no
-# servidor (ver build.sh). O Portainer nao consegue buildar a partir do editor.
+# As imagens sao buildadas direto dos repositorios publicos no GitHub: o Docker
+# clona a URL do `build.context` sozinho, entao nao e preciso ter o codigo no
+# servidor nem publicar as imagens em um registry.
 # ---------------------------------------------------------------------------
 
 services:
@@ -57,6 +58,8 @@ services:
       - internal
 
   api:
+    build:
+      context: ${API_REPO:-https://github.com/DKdevs-Digital-Solutions/escrilex-back.git#main}
     image: ${API_IMAGE:-escrilex-api:latest}
     container_name: escrilex-api
     restart: unless-stopped
@@ -85,6 +88,8 @@ services:
       - internal
 
   web:
+    build:
+      context: ${WEB_REPO:-https://github.com/DKdevs-Digital-Solutions/escrilex-front.git#main}
     image: ${WEB_IMAGE:-escrilex-web:latest}
     container_name: escrilex-web
     restart: unless-stopped
