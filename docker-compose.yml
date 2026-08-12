@@ -1,0 +1,118 @@
+# ---------------------------------------------------------------------------
+# Stack Escrilex — colar no Web editor do Portainer.
+#
+# As imagens escrilex-api e escrilex-web precisam ter sido buildadas antes no
+# servidor (ver build.sh). O Portainer nao consegue buildar a partir do editor.
+#
+# Preencher antes de fazer o deploy:
+#   - POSTGRES_PASSWORD (services db e api)
+#   - JWT_SECRET (service api)
+#   - ACME_EMAIL (service traefik)
+#   - TEAMS_WEBHOOK_URL (service api, opcional)
+# ---------------------------------------------------------------------------
+
+services:
+  traefik:
+    image: traefik:v3.3
+    container_name: escrilex-traefik
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=escrilex-web
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      # Redireciona todo HTTP para HTTPS
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --certificatesresolvers.le.acme.email=suporte@dkdevs.com.br
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge=true
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+      - --log.level=INFO
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
+    networks:
+      - web
+
+  db:
+    image: postgres:16-alpine
+    container_name: escrilex-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: escrilex
+      POSTGRES_PASSWORD: TROQUE_ESTA_SENHA
+      POSTGRES_DB: escrilex
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U escrilex -d escrilex"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  api:
+    image: escrilex-api:latest
+    container_name: escrilex-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # A senha aqui precisa ser igual a POSTGRES_PASSWORD do service db
+      DATABASE_URL: postgresql://escrilex:TROQUE_ESTA_SENHA@db:5432/escrilex?schema=public
+      API_PORT: 3000
+      JWT_SECRET: TROQUE_ESTE_SEGREDO
+      WEB_ORIGINS: https://escrilex.app.br
+      TEAMS_WEBHOOK_URL: ""
+      OVERDUE_SCAN_EVERY_MINUTES: 10
+    # Aplica as migrations pendentes antes de subir a API
+    command: sh -c "npx prisma migrate deploy && node src/server.js"
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=escrilex-web
+      - traefik.http.routers.api.rule=Host(`api.escrilex.app.br`)
+      - traefik.http.routers.api.entrypoints=websecure
+      - traefik.http.routers.api.tls=true
+      - traefik.http.routers.api.tls.certresolver=le
+      - traefik.http.services.api.loadbalancer.server.port=3000
+    networks:
+      - web
+      - internal
+
+  web:
+    image: escrilex-web:latest
+    container_name: escrilex-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      # Injetada no bundle do front no start do container
+      API_URL: https://api.escrilex.app.br
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=escrilex-web
+      - traefik.http.routers.web.rule=Host(`escrilex.app.br`)
+      - traefik.http.routers.web.entrypoints=websecure
+      - traefik.http.routers.web.tls=true
+      - traefik.http.routers.web.tls.certresolver=le
+      - traefik.http.services.web.loadbalancer.server.port=80
+    networks:
+      - web
+
+networks:
+  web:
+    name: escrilex-web
+  internal:
+    name: escrilex-internal
+    internal: true
+
+volumes:
+  db_data:
+  traefik_letsencrypt:
