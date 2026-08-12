@@ -64,6 +64,8 @@ services:
     build:
       context: ${API_REPO:-https://github.com/DKdevs-Digital-Solutions/escrilex-back.git#main}
     image: ${API_IMAGE:-escrilex-api:latest}
+    # Imagem local: nunca tentar puxar de registry, sempre buildar do repo
+    pull_policy: build
     container_name: escrilex-api
     restart: unless-stopped
     depends_on:
@@ -94,6 +96,8 @@ services:
     build:
       context: ${WEB_REPO:-https://github.com/DKdevs-Digital-Solutions/escrilex-front.git#main}
     image: ${WEB_IMAGE:-escrilex-web:latest}
+    # Imagem local: nunca tentar puxar de registry, sempre buildar do repo
+    pull_policy: build
     container_name: escrilex-web
     restart: unless-stopped
     depends_on:
