@@ -48,6 +48,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-escrilex}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-escrilex}
+    ports:
+      - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
