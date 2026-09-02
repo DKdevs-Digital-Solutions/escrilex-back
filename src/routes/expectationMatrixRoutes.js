@@ -275,7 +275,7 @@ function buildListWhere(req) {
 
 // Ordenação da listagem: código como número (menor -> maior); códigos não numéricos ficam no fim.
 const MATRIX_ORDER_BY_SQL = `
-  NULLIF(regexp_replace(COALESCE(c."cod", ''), '[^0-9]', '', 'g'), '')::bigint ASC NULLS LAST,
+  NULLIF(regexp_replace(COALESCE(c."cod", ''), '[^0-9]', '', 'g'), '')::numeric ASC NULLS LAST,
   COALESCE(c."cod", c."razaoSocial", c."cnpj") ASC
 `;
 
@@ -586,7 +586,7 @@ expectationMatrixRoutes.get("/", async (req, res) => {
 
   const [rows, countRows, sectors] = await Promise.all([
     prisma.$queryRawUnsafe(
-      `${matrixSelectSql} WHERE ${whereSql} ORDER BY ${MATRIX_ORDER_BY_SQL} LIMIT ${params.length + 1} OFFSET ${params.length + 2}`,
+      `${matrixSelectSql} WHERE ${whereSql} ORDER BY ${MATRIX_ORDER_BY_SQL} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       ...params,
       limit,
       offset,
