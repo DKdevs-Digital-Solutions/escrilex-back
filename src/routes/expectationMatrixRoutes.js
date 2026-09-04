@@ -584,7 +584,7 @@ expectationMatrixRoutes.get("/", async (req, res) => {
   const { limit, offset }      = parseLimitOffset(req.query);
   const { whereSql, params }   = buildListWhere(req);
 
-  const [rows, countRows, sectors] = await Promise.all([
+  const [rows, countRows, situacaoRows, sectors] = await Promise.all([
     prisma.$queryRawUnsafe(
       `${matrixSelectSql} WHERE ${whereSql} ORDER BY ${MATRIX_ORDER_BY_SQL} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       ...params,
@@ -595,12 +595,32 @@ expectationMatrixRoutes.get("/", async (req, res) => {
       `SELECT COUNT(*)::int AS total FROM "Company" c LEFT JOIN ${MATRIX_TABLE} m ON m."companyId" = c."id" WHERE ${whereSql}`,
       ...params,
     ),
+    // Totais por situação (ATIVA, ENCERRADA, ...) sobre TODO o filtro, não só a página.
+    prisma.$queryRawUnsafe(
+      `SELECT UPPER(TRIM(COALESCE(c."situacao", ''))) AS situacao, COUNT(*)::int AS total
+         FROM "Company" c LEFT JOIN ${MATRIX_TABLE} m ON m."companyId" = c."id"
+        WHERE ${whereSql}
+        GROUP BY 1`,
+      ...params,
+    ),
     getActiveSectors(),
   ]);
 
   const enrichedRows = await enrichRowsWithSectorResponsibles(rows, sectors);
 
-  res.json({ total: Number(countRows[0]?.total || 0), limit, offset, items: enrichedRows });
+  // { ATIVA: 520, ENCERRADA: 42, ... }; situação vazia vira a chave "SEM_SITUACAO".
+  const situacaoCounts = {};
+  for (const row of situacaoRows) {
+    situacaoCounts[row.situacao || "SEM_SITUACAO"] = Number(row.total || 0);
+  }
+
+  res.json({
+    total: Number(countRows[0]?.total || 0),
+    limit,
+    offset,
+    items: enrichedRows,
+    situacaoCounts,
+  });
 });
 
 /**
