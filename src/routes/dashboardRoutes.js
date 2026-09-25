@@ -63,6 +63,12 @@ async function countScalar(sql, ...params) {
   return Number(first(rows[0], "total", 0));
 }
 
+// Agrupa variações de grafia do mesmo valor ("Simples Nacional", "SIMPLES NACIONAL",
+// "simples  nacional") em um único rótulo: maiúsculas, sem espaço duplicado nem nas pontas.
+function normalizedLabelSql(expr) {
+  return `UPPER(TRIM(REGEXP_REPLACE(${expr}, '[[:space:]]+', ' ', 'g')))`;
+}
+
 async function groupRows(sql, ...params) {
   const rows = await prisma.$queryRawUnsafe(sql, ...params);
   return rows.map((row) => ({ label: row.label || "Não informado", total: Number(row.total || 0) }));
@@ -136,25 +142,25 @@ dashboardRoutes.get("/summary", async (req, res) => {
       endDate,
     ),
     groupRows(
-      `SELECT COALESCE(NULLIF("tributacao", ''), 'Não informado') AS label, COUNT(*)::int AS total
+      `SELECT ${normalizedLabelSql(`COALESCE(NULLIF("tributacao", ''), 'Não informado')`)} AS label, COUNT(*)::int AS total
        FROM "Company"
        GROUP BY 1
        ORDER BY total DESC`,
     ),
     groupRows(
-      `SELECT COALESCE(NULLIF("ramo", ''), 'Não informado') AS label, COUNT(*)::int AS total
+      `SELECT ${normalizedLabelSql(`COALESCE(NULLIF("ramo", ''), 'Não informado')`)} AS label, COUNT(*)::int AS total
        FROM "Company"
        GROUP BY 1
        ORDER BY total DESC`,
     ),
     groupRows(
-      `SELECT COALESCE(NULLIF("perfil", ''), 'Não informado') AS label, COUNT(*)::int AS total
+      `SELECT ${normalizedLabelSql(`COALESCE(NULLIF("perfil", ''), 'Não informado')`)} AS label, COUNT(*)::int AS total
        FROM "Company"
        GROUP BY 1
        ORDER BY total DESC`,
     ),
     groupRows(
-      `SELECT COALESCE(NULLIF("situacao", ''), CASE WHEN "active" THEN 'Ativo' ELSE 'Inativo' END) AS label, COUNT(*)::int AS total
+      `SELECT ${normalizedLabelSql(`COALESCE(NULLIF("situacao", ''), CASE WHEN "active" THEN 'Ativo' ELSE 'Inativo' END)`)} AS label, COUNT(*)::int AS total
        FROM "Company"
        GROUP BY 1
        ORDER BY total DESC`,
@@ -254,10 +260,20 @@ dashboardRoutes.get("/details", async (req, res) => {
     );
   } else if (["tributacao", "ramo", "perfil", "status"].includes(type)) {
     const column = type === "status" ? "situacao" : type;
+
+    // O rótulo vem normalizado do /summary; compara com a mesma normalização,
+    // para que o clique na fatia também encontre "Não informado".
+    const fallback =
+      type === "status"
+        ? `CASE WHEN c."active" THEN 'Ativo' ELSE 'Inativo' END`
+        : `'Não informado'`;
+
+    const labelExpr = normalizedLabelSql(`COALESCE(NULLIF(c."${column}", ''), ${fallback})`);
+
     rows = await prisma.$queryRawUnsafe(
       `SELECT ${companyColumns}
        FROM "Company" c
-       WHERE COALESCE(c."${column}", '') = $1
+       WHERE ${labelExpr} = ${normalizedLabelSql("$1")}
        ORDER BY c."razaoSocial" ASC
        LIMIT $2 OFFSET $3`,
       value,
