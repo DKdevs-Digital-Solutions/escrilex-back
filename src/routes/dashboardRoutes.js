@@ -126,8 +126,16 @@ dashboardRoutes.get("/summary", async (req, res) => {
       previousStartDate,
       previousEndDate,
     ),
-    countScalar(`SELECT COUNT(*)::int AS total FROM "Company" WHERE "active" = true`),
-    countScalar(`SELECT COUNT(*)::int AS total FROM "Company" WHERE "active" = false`),
+    // Conta pela SITUAÇÃO da empresa (ATIVA/ENCERRADA), não pelo flag "active" do
+    // cadastro — é assim que a tela de Empresas conta, e os números precisam bater.
+    countScalar(
+      `SELECT COUNT(*)::int AS total FROM "Company"
+        WHERE UPPER(TRIM(COALESCE("situacao", ''))) IN ('ATIVA', 'ATIVO')`,
+    ),
+    countScalar(
+      `SELECT COUNT(*)::int AS total FROM "Company"
+        WHERE UPPER(TRIM(COALESCE("situacao", ''))) IN ('ENCERRADA', 'ENCERRADO')`,
+    ),
     prisma.$queryRawUnsafe(
       `SELECT "action" AS label, COUNT(*)::int AS total
        FROM "AuditLog"
