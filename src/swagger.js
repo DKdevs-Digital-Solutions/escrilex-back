@@ -874,7 +874,21 @@ function buildPaths() {
   };
 }
 
-export function buildOpenApiSpec() {
+// Base usada pelo "Try it out" do Swagger UI. Prioriza API_PUBLIC_URL; sem ela,
+// usa o próprio host que serviu a página (atrás do Traefik vem nos x-forwarded-*).
+function resolvePublicUrl(req) {
+  const configured = String(process.env.API_PUBLIC_URL || "").trim();
+  if (configured) return configured.endsWith("/") ? configured.slice(0, -1) : configured;
+
+  const firstValue = (value) => String(value || "").split(",")[0].trim();
+
+  const proto = firstValue(req?.headers?.["x-forwarded-proto"]) || req?.protocol || "http";
+  const host  = firstValue(req?.headers?.["x-forwarded-host"]) || firstValue(req?.headers?.host);
+
+  return host ? `${proto}://${host}` : "/";
+}
+
+export function buildOpenApiSpec(publicUrl = "/") {
   return {
     openapi: "3.0.3",
     info: {
@@ -882,7 +896,7 @@ export function buildOpenApiSpec() {
       version: "1.0.0",
       description: "Documentação das chamadas disponíveis do backend, incluindo dashboard, empresas, process, templates e configuração de notificações do Microsoft Teams.",
     },
-    servers: [{ url: "https://escrilex-back.onrender.com" }],
+    servers: [{ url: publicUrl || "/" }],
     components: {
       securitySchemes: {
         bearerAuth: {
@@ -906,8 +920,8 @@ function escapeHtml(value) {
 }
 
 export function registerSwagger(app) {
-  app.get("/swagger.json", (_req, res) => {
-    res.json(buildOpenApiSpec());
+  app.get("/swagger.json", (req, res) => {
+    res.json(buildOpenApiSpec(resolvePublicUrl(req)));
   });
 
   app.get("/docs", (_req, res) => {
